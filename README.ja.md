@@ -31,7 +31,21 @@ npm install
 npm run build
 ```
 
-## Claude Desktop 設定
+## MCP クライアント設定
+
+Claude Desktop、Claude Code、Codex CLI、Gemini CLI など各種MCPクライアントで使用できます。
+
+### 設定ファイルの場所
+
+| クライアント | 設定ファイル |
+|-------------|-------------|
+| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Code | `~/.claude/settings.json` |
+| Codex CLI | `~/.codex/config.toml` |
+| Gemini CLI | `~/.gemini/settings.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| ChatGPT Desktop | アプリ内設定（Developer Mode） |
 
 ### npx経由（インストール不要）
 
@@ -48,8 +62,6 @@ npm run build
 
 ### ローカルビルド版を使用
 
-`claude_desktop_config.json` に追加:
-
 ```json
 {
   "mcpServers": {
@@ -60,6 +72,8 @@ npm run build
   }
 }
 ```
+
+> **Note**: Codex CLI は TOML 形式です。詳細は [Codex MCP ドキュメント](https://developers.openai.com/codex/mcp/) を参照してください。
 
 ## ツール
 

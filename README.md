@@ -31,7 +31,21 @@ npm install
 npm run build
 ```
 
-## Claude Desktop Configuration
+## MCP Client Configuration
+
+Works with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, and other MCP clients.
+
+### Configuration File Locations
+
+| Client | Config File |
+|--------|-------------|
+| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Code | `~/.claude/settings.json` |
+| Codex CLI | `~/.codex/config.toml` |
+| Gemini CLI | `~/.gemini/settings.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| ChatGPT Desktop | In-app settings (Developer Mode) |
 
 ### Via npx (No Installation Required)
 
@@ -48,8 +62,6 @@ npm run build
 
 ### Using Local Build
 
-Add to `claude_desktop_config.json`:
-
 ```json
 {
   "mcpServers": {
@@ -60,6 +72,8 @@ Add to `claude_desktop_config.json`:
   }
 }
 ```
+
+> **Note**: Codex CLI uses TOML format. See [Codex MCP documentation](https://developers.openai.com/codex/mcp/) for details.
 
 ## Tools
 
