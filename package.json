@@ -1,6 +1,6 @@
 {
   "name": "conversation-handoff-mcp",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "bin": {
     "conversation-handoff-mcp": "./dist/index.js"
   },

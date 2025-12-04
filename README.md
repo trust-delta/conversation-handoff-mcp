@@ -124,6 +124,65 @@ Check storage usage and limits.
 handoff_stats()
 ```
 
+## Shared Server Mode (v0.2.0+)
+
+Share handoffs across multiple MCP clients (Claude Desktop, Claude Code, etc.) using HTTP server mode.
+
+### Starting the Shared Server
+
+```bash
+# Default port (1099)
+npx conversation-handoff-mcp --serve
+
+# Custom port
+npx conversation-handoff-mcp --serve --port 3000
+```
+
+### Configuring MCP Clients to Use Shared Server
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"],
+      "env": {
+        "HANDOFF_SERVER": "http://localhost:1099"
+      }
+    }
+  }
+}
+```
+
+### HTTP Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /handoff | Save a handoff |
+| GET | /handoff | List all handoffs |
+| GET | /handoff/:key | Load a specific handoff |
+| DELETE | /handoff/:key | Delete a specific handoff |
+| DELETE | /handoff | Delete all handoffs |
+| GET | /stats | Get storage statistics |
+| GET | / | Health check |
+
+### Workflow Example
+
+1. Start the shared server:
+   ```bash
+   npx conversation-handoff-mcp --serve
+   ```
+
+2. In Claude Desktop, save a handoff:
+   ```
+   handoff_save(key: "my-task", title: "My Task", summary: "...", conversation: "...")
+   ```
+
+3. In Claude Code (or another client), load the handoff:
+   ```
+   handoff_load(key: "my-task")
+   ```
+
 ## Configuration
 
 Customize limits via environment variables.

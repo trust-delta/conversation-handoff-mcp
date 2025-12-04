@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-05
+
+### Added
+
+- **Shared Server Mode**: HTTP server mode (`--serve`) for cross-client handoff sharing
+  - Multiple MCP clients can share handoffs via HTTP
+  - Default port: 1099 (configurable with `--port`)
+  - Environment variable `HANDOFF_SERVER` to connect to remote server
+- HTTP endpoints:
+  - `POST /handoff` - Save a handoff
+  - `GET /handoff` - List all handoffs
+  - `GET /handoff/:key` - Load a specific handoff
+  - `DELETE /handoff/:key` - Delete a specific handoff
+  - `DELETE /handoff` - Delete all handoffs
+  - `GET /stats` - Get storage statistics
+  - `GET /` - Health check
+- CLI options: `--serve`, `--port`, `--help`
+- Storage abstraction layer (`LocalStorage` / `RemoteStorage`)
+- Unit tests for storage layer (16 new tests, total 36)
+
+### Changed
+
+- Refactored codebase into modular structure:
+  - `storage.ts` - Storage interface and implementations
+  - `server.ts` - HTTP server implementation
+  - `index.ts` - Entry point with CLI argument parsing
+
 ## [0.1.6] - 2024-12-04
 
 ### Changed

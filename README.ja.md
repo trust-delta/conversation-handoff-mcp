@@ -124,6 +124,65 @@ handoff_clear()  // 全削除
 handoff_stats()
 ```
 
+## 共有サーバーモード (v0.2.0+)
+
+複数のMCPクライアント（Claude Desktop、Claude Code など）間でhandoffを共有できます。
+
+### 共有サーバーの起動
+
+```bash
+# デフォルトポート (1099)
+npx conversation-handoff-mcp --serve
+
+# カスタムポート
+npx conversation-handoff-mcp --serve --port 3000
+```
+
+### MCPクライアントの設定（共有サーバー使用時）
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"],
+      "env": {
+        "HANDOFF_SERVER": "http://localhost:1099"
+      }
+    }
+  }
+}
+```
+
+### HTTPエンドポイント
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | /handoff | handoffを保存 |
+| GET | /handoff | handoff一覧を取得 |
+| GET | /handoff/:key | 特定のhandoffを取得 |
+| DELETE | /handoff/:key | 特定のhandoffを削除 |
+| DELETE | /handoff | 全handoffを削除 |
+| GET | /stats | ストレージ統計を取得 |
+| GET | / | ヘルスチェック |
+
+### 使用例
+
+1. 共有サーバーを起動:
+   ```bash
+   npx conversation-handoff-mcp --serve
+   ```
+
+2. Claude Desktop でhandoffを保存:
+   ```
+   handoff_save(key: "my-task", title: "タスク名", summary: "...", conversation: "...")
+   ```
+
+3. Claude Code（または別のクライアント）でhandoffを読み込み:
+   ```
+   handoff_load(key: "my-task")
+   ```
+
 ## 設定
 
 環境変数で制限値をカスタマイズできます。
