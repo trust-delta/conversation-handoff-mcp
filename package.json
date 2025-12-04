@@ -1,0 +1,73 @@
+{
+  "name": "conversation-handoff-mcp",
+  "version": "0.1.6",
+  "bin": {
+    "conversation-handoff-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "description": "MCP server for conversation handoff between AI chats/projects",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "rebuild": "npm run clean && npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --write src/",
+    "format": "biome format --write src/",
+    "format:check": "biome format src/",
+    "check": "biome check src/",
+    "check:fix": "biome check --write src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run check && npm run test && npm run rebuild",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "handoff",
+    "conversation",
+    "ai",
+    "context",
+    "model-context-protocol"
+  ],
+  "author": "trust-delta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trust-delta/conversation-handoff-mcp.git"
+  },
+  "homepage": "https://github.com/trust-delta/conversation-handoff-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/trust-delta/conversation-handoff-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^20.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "biome check --write"
+    ]
+  }
+}
