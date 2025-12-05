@@ -124,9 +124,37 @@ Check storage usage and limits.
 handoff_stats()
 ```
 
-## Shared Server Mode (v0.2.0+)
+## Shared Server Mode (v0.3.0+)
 
 Share handoffs across multiple MCP clients (Claude Desktop, Claude Code, etc.) using HTTP server mode.
+
+### Operating Modes
+
+Starting with v0.3.0, MCP clients check for a local server (`localhost:1099`) **on each request**:
+
+| Status | Behavior |
+|--------|----------|
+| Server is running | Shared mode (handoffs are shared) |
+| Server is not running | Standalone mode (with warning) |
+| `HANDOFF_SERVER=none` | Standalone mode (no warning) |
+
+**Dynamic mode switching:**
+- Start a server later → Automatically switches to shared mode on next request
+- Server goes down → Falls back to standalone on next request
+- Data saved in standalone mode is preserved across mode switches
+
+### Standalone Mode Limitations
+
+In standalone mode, handoff data is stored in the MCP server process memory.
+
+**What works:**
+- Handoffs between conversations/projects within the same app (e.g., between different projects in Claude Desktop)
+
+**What doesn't work:**
+- Handoffs between different apps (e.g., Claude Desktop → Claude Code)
+- Handoffs between different processes
+
+To share handoffs across multiple MCP clients, start a shared server.
 
 ### Starting the Shared Server
 
@@ -138,7 +166,22 @@ npx conversation-handoff-mcp --serve
 npx conversation-handoff-mcp --serve --port 3000
 ```
 
-### Configuring MCP Clients to Use Shared Server
+### MCP Client Configuration
+
+**Standard configuration (recommended)** - Auto-connects if server is available:
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"]
+    }
+  }
+}
+```
+
+**Specify custom server:**
 
 ```json
 {
@@ -147,7 +190,23 @@ npx conversation-handoff-mcp --serve --port 3000
       "command": "npx",
       "args": ["-y", "conversation-handoff-mcp"],
       "env": {
-        "HANDOFF_SERVER": "http://localhost:1099"
+        "HANDOFF_SERVER": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+**Always use standalone mode (never use shared server):**
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"],
+      "env": {
+        "HANDOFF_SERVER": "none"
       }
     }
   }

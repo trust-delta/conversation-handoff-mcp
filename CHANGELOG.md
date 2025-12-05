@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-06
+
+### Added
+
+- **Dynamic Fallback**: Per-request server availability check with automatic mode switching
+  - Server health check on each tool request (not just startup)
+  - Automatic fallback from shared to standalone mode when server goes down
+  - Automatic reconnection to shared mode when server becomes available
+- `HANDOFF_SERVER=none` for explicit standalone mode (no health check, no warnings)
+- Singleton LocalStorage to preserve data across mode switches
+- Warning message deduplication (only shown on mode change)
+- Unit tests for dynamic storage (10 new tests, total 46)
+
+### Changed
+
+- Replaced `createStorage()` with `getStorage()` for per-request dynamic mode selection
+- Reduced health check timeout from 1000ms to 500ms for faster fallback
+- Updated README with dynamic mode switching documentation
+- Added standalone mode limitations documentation
+
 ## [0.2.0] - 2025-12-05
 
 ### Added

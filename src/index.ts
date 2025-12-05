@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { DEFAULT_PORT, startServer } from "./server.js";
-import { type Storage, createStorage } from "./storage.js";
+import { getStorage } from "./storage.js";
 
 // =============================================================================
 // CLI Arguments
@@ -103,7 +103,7 @@ Environment Variables:
 // MCP Server Setup
 // =============================================================================
 
-function registerTools(server: McpServer, storage: Storage): void {
+function registerTools(server: McpServer): void {
   // handoff_save
   server.registerTool(
     "handoff_save",
@@ -127,6 +127,7 @@ function registerTools(server: McpServer, storage: Storage): void {
       },
     },
     async ({ key, title, summary, conversation, from_ai, from_project }) => {
+      const { storage } = await getStorage();
       const result = await storage.save({
         key,
         title,
@@ -166,6 +167,7 @@ function registerTools(server: McpServer, storage: Storage): void {
         "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content.",
     },
     async () => {
+      const { storage } = await getStorage();
       const result = await storage.list();
 
       if (!result.success) {
@@ -215,6 +217,7 @@ function registerTools(server: McpServer, storage: Storage): void {
       },
     },
     async ({ key, max_messages }) => {
+      const { storage } = await getStorage();
       const result = await storage.load(key, max_messages);
 
       if (!result.success || !result.data) {
@@ -261,6 +264,7 @@ ${handoff.conversation}`,
       },
     },
     async ({ key }) => {
+      const { storage } = await getStorage();
       const result = await storage.clear(key);
 
       if (!result.success) {
@@ -296,6 +300,7 @@ ${handoff.conversation}`,
       description: "Get storage statistics and current limits. Useful for monitoring usage.",
     },
     async () => {
+      const { storage } = await getStorage();
       const result = await storage.stats();
 
       if (!result.success) {
@@ -340,14 +345,12 @@ async function main(): Promise<void> {
   }
 
   // MCP mode
-  const storage = createStorage();
-
   const server = new McpServer({
     name: "conversation-handoff",
-    version: "0.2.0",
+    version: "0.3.0",
   });
 
-  registerTools(server, storage);
+  registerTools(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
