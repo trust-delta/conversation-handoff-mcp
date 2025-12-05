@@ -124,9 +124,37 @@ handoff_clear()  // 全削除
 handoff_stats()
 ```
 
-## 共有サーバーモード (v0.2.0+)
+## 共有サーバーモード (v0.3.0+)
 
 複数のMCPクライアント（Claude Desktop、Claude Code など）間でhandoffを共有できます。
+
+### 動作モード
+
+v0.3.0から、MCPクライアントは**リクエストごとに**ローカルサーバー（`localhost:1099`）への接続を確認します：
+
+| 状態 | 動作 |
+|------|------|
+| サーバーが起動している | 共有モード（handoffを共有） |
+| サーバーが起動していない | スタンドアロンモード（警告付き） |
+| `HANDOFF_SERVER=none` | スタンドアロンモード（警告なし） |
+
+**動的モード切り替え:**
+- 途中でサーバーを起動 → 次のリクエストから自動で共有モードに切り替わる
+- サーバーが落ちた → 次のリクエストでスタンドアロンにフォールバック
+- スタンドアロンで保存したデータは、モード切り替え後も保持される
+
+### スタンドアロンモードの制約
+
+スタンドアロンモードでは、handoffデータはMCPサーバープロセスのメモリ内に保存されます。
+
+**可能なこと:**
+- 同一アプリ内での会話・プロジェクト間の引き継ぎ（例: Claude Desktopの異なるプロジェクト間）
+
+**できないこと:**
+- 異なるアプリ間での引き継ぎ（例: Claude Desktop → Claude Code）
+- 異なるプロセス間での引き継ぎ
+
+複数のMCPクライアント間でhandoffを共有するには、共有サーバーを起動してください。
 
 ### 共有サーバーの起動
 
@@ -138,7 +166,22 @@ npx conversation-handoff-mcp --serve
 npx conversation-handoff-mcp --serve --port 3000
 ```
 
-### MCPクライアントの設定（共有サーバー使用時）
+### MCPクライアントの設定
+
+**標準設定（推奨）** - サーバーが利用可能な場合は自動接続：
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"]
+    }
+  }
+}
+```
+
+**カスタムサーバー(ポート)を指定：**
 
 ```json
 {
@@ -147,7 +190,23 @@ npx conversation-handoff-mcp --serve --port 3000
       "command": "npx",
       "args": ["-y", "conversation-handoff-mcp"],
       "env": {
-        "HANDOFF_SERVER": "http://localhost:1099"
+        "HANDOFF_SERVER": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+**常にスタンドアロンモード（共有サーバーを使用しない）：**
+
+```json
+{
+  "mcpServers": {
+    "conversation-handoff": {
+      "command": "npx",
+      "args": ["-y", "conversation-handoff-mcp"],
+      "env": {
+        "HANDOFF_SERVER": "none"
       }
     }
   }
