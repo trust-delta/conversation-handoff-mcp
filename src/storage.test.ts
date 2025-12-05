@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { LocalStorage, type SaveInput } from "./storage.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  LocalStorage,
+  RemoteStorage,
+  type SaveInput,
+  getStorage,
+  resetStorageState,
+} from "./storage.js";
 import type { Config } from "./validation.js";
 
 const testConfig: Config = {
@@ -185,5 +191,191 @@ describe("LocalStorage", () => {
       const result = await storage.stats();
       expect(result.data?.usage.handoffsPercent).toBe(50); // 5 out of 10
     });
+  });
+});
+
+describe("getStorage", () => {
+  const originalEnv = process.env.HANDOFF_SERVER;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    resetStorageState();
+  });
+
+  afterEach(() => {
+    process.env.HANDOFF_SERVER = originalEnv;
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    resetStorageState();
+  });
+
+  it("should return standalone-explicit mode when HANDOFF_SERVER=none", async () => {
+    process.env.HANDOFF_SERVER = "none";
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("standalone-explicit");
+    expect(result.storage).toBeInstanceOf(LocalStorage);
+    expect(result.serverUrl).toBeUndefined();
+  });
+
+  it("should return standalone mode when default server is not available", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // Mock fetch to simulate server not available
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("standalone");
+    expect(result.storage).toBeInstanceOf(LocalStorage);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not available"));
+  });
+
+  it("should return standalone mode when custom server is not available", async () => {
+    process.env.HANDOFF_SERVER = "http://localhost:3000";
+
+    // Mock fetch to simulate server not available
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("standalone");
+    expect(result.storage).toBeInstanceOf(LocalStorage);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Cannot connect to server"));
+  });
+
+  it("should return shared mode when server is available", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // Mock fetch to simulate server available
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+    } as Response);
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("shared");
+    expect(result.storage).toBeInstanceOf(RemoteStorage);
+    expect(result.serverUrl).toBe("http://localhost:1099");
+  });
+
+  it("should return shared mode when custom server is available", async () => {
+    process.env.HANDOFF_SERVER = "http://localhost:3000";
+
+    // Mock fetch to simulate server available
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+    } as Response);
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("shared");
+    expect(result.storage).toBeInstanceOf(RemoteStorage);
+    expect(result.serverUrl).toBe("http://localhost:3000");
+  });
+
+  it("should fallback to standalone when server returns non-ok response", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // Mock fetch to simulate server error response
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+    } as Response);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await getStorage();
+
+    expect(result.mode).toBe("standalone");
+    expect(result.storage).toBeInstanceOf(LocalStorage);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("should switch from standalone to shared when server becomes available", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // First call: server not available
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result1 = await getStorage();
+    expect(result1.mode).toBe("standalone");
+
+    // Second call: server becomes available
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+
+    const result2 = await getStorage();
+    expect(result2.mode).toBe("shared");
+  });
+
+  it("should switch from shared to standalone when server goes down", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // First call: server available
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+
+    const result1 = await getStorage();
+    expect(result1.mode).toBe("shared");
+
+    // Second call: server goes down
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result2 = await getStorage();
+    expect(result2.mode).toBe("standalone");
+  });
+
+  it("should not warn twice when already in standalone mode", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Call twice
+    await getStorage();
+    await getStorage();
+
+    // Warning should only be called once (on first mode change)
+    expect(warnSpy).toHaveBeenCalledTimes(2); // 2 warnings on first call, 0 on second
+  });
+
+  it("should preserve local storage data across mode switches", async () => {
+    // biome-ignore lint/performance/noDelete: need to clear env var for test
+    delete process.env.HANDOFF_SERVER;
+
+    // Start in standalone mode
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result1 = await getStorage();
+    await result1.storage.save({
+      key: "test-key",
+      title: "Test",
+      summary: "Summary",
+      conversation: "Conversation",
+      from_ai: "claude",
+      from_project: "",
+    });
+
+    // Switch to shared mode (simulated, but local storage should persist)
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Still down"));
+
+    const result2 = await getStorage();
+    const loaded = await result2.storage.load("test-key");
+
+    expect(loaded.success).toBe(true);
+    expect(loaded.data?.title).toBe("Test");
   });
 });

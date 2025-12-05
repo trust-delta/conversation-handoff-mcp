@@ -272,17 +272,121 @@ export class RemoteStorage implements Storage {
 }
 
 // =============================================================================
-// Factory
+// Health Check
 // =============================================================================
 
-export function createStorage(): Storage {
-  const serverUrl = process.env.HANDOFF_SERVER;
+const DEFAULT_SERVER = "http://localhost:1099";
+const HEALTH_CHECK_TIMEOUT_MS = 500; // Short timeout for per-request checks
 
-  if (serverUrl) {
-    console.error(`Connecting to remote handoff server: ${serverUrl}`);
-    return new RemoteStorage(serverUrl);
+async function checkServerHealth(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/`, {
+      method: "GET",
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// =============================================================================
+// Dynamic Storage Provider
+// =============================================================================
+
+export type StorageMode = "shared" | "standalone" | "standalone-explicit";
+
+export interface GetStorageResult {
+  storage: Storage;
+  mode: StorageMode;
+  serverUrl?: string;
+}
+
+// Singleton local storage instance (preserves data across mode switches)
+let localStorageInstance: LocalStorage | null = null;
+
+function getLocalStorage(): LocalStorage {
+  if (!localStorageInstance) {
+    localStorageInstance = new LocalStorage();
+  }
+  return localStorageInstance;
+}
+
+// Track previous mode for warning deduplication
+let previousMode: StorageMode | null = null;
+let previousServerUrl: string | null = null;
+
+/**
+ * Get storage dynamically based on server availability.
+ * Called on each request to enable dynamic mode switching.
+ */
+export async function getStorage(): Promise<GetStorageResult> {
+  const serverEnv = process.env.HANDOFF_SERVER;
+
+  // Explicit standalone mode (no warning, no health check)
+  if (serverEnv === "none") {
+    const mode: StorageMode = "standalone-explicit";
+    if (previousMode !== mode) {
+      console.error("[conversation-handoff] Standalone mode (explicit)");
+      previousMode = mode;
+      previousServerUrl = null;
+    }
+    return {
+      storage: getLocalStorage(),
+      mode,
+    };
   }
 
-  console.error("Using local in-memory storage");
-  return new LocalStorage();
+  // Determine target server URL
+  const targetUrl = serverEnv || DEFAULT_SERVER;
+
+  // Check server availability
+  const isAvailable = await checkServerHealth(targetUrl);
+
+  if (isAvailable) {
+    const mode: StorageMode = "shared";
+    // Log only on mode change or server URL change
+    if (previousMode !== mode || previousServerUrl !== targetUrl) {
+      console.error(`[conversation-handoff] Shared mode: ${targetUrl}`);
+      previousMode = mode;
+      previousServerUrl = targetUrl;
+    }
+    return {
+      storage: new RemoteStorage(targetUrl),
+      mode,
+      serverUrl: targetUrl,
+    };
+  }
+
+  // Fallback to standalone with warning (only on mode change)
+  const mode: StorageMode = "standalone";
+  if (previousMode !== mode || previousServerUrl !== targetUrl) {
+    const isDefault = !serverEnv;
+    if (isDefault) {
+      console.warn(
+        `[conversation-handoff] Shared server (${targetUrl}) not available. Running in standalone mode.`
+      );
+      console.warn(
+        "[conversation-handoff] To share handoffs, start a server: npx conversation-handoff-mcp --serve"
+      );
+    } else {
+      console.warn(
+        `[conversation-handoff] Cannot connect to server (${targetUrl}). Falling back to standalone mode.`
+      );
+    }
+    previousMode = mode;
+    previousServerUrl = targetUrl;
+  }
+
+  return {
+    storage: getLocalStorage(),
+    mode,
+  };
+}
+
+// For testing: reset internal state
+export function resetStorageState(): void {
+  localStorageInstance = null;
+  previousMode = null;
+  previousServerUrl = null;
 }
