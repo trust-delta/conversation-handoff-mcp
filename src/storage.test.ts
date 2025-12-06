@@ -83,7 +83,7 @@ describe("LocalStorage", () => {
       expect(summary?.key).toBeDefined();
       expect(summary?.title).toBeDefined();
       expect(summary?.summary).toBeDefined();
-      expect((summary as Record<string, unknown>)?.conversation).toBeUndefined();
+      expect(summary && "conversation" in summary).toBe(false);
     });
   });
 
@@ -190,6 +190,115 @@ describe("LocalStorage", () => {
 
       const result = await storage.stats();
       expect(result.data?.usage.handoffsPercent).toBe(50); // 5 out of 10
+    });
+  });
+});
+
+describe("RemoteStorage", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  describe("constructor", () => {
+    it("should accept http:// URL", () => {
+      expect(() => new RemoteStorage("http://localhost:1099")).not.toThrow();
+    });
+
+    it("should accept https:// URL", () => {
+      expect(() => new RemoteStorage("https://example.com")).not.toThrow();
+    });
+
+    it("should reject file:// URL", () => {
+      expect(() => new RemoteStorage("file:///etc/passwd")).toThrow(
+        "Server URL must use http:// or https:// protocol"
+      );
+    });
+
+    it("should reject URL without protocol", () => {
+      expect(() => new RemoteStorage("localhost:1099")).toThrow(
+        "Server URL must use http:// or https:// protocol"
+      );
+    });
+
+    it("should reject ftp:// URL", () => {
+      expect(() => new RemoteStorage("ftp://example.com")).toThrow(
+        "Server URL must use http:// or https:// protocol"
+      );
+    });
+
+    it("should remove trailing slash from URL", () => {
+      const storage = new RemoteStorage("http://localhost:1099/");
+      // Verify by checking that requests go to correct URL
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      storage.list();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:1099/handoff",
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe("request error handling", () => {
+    it("should handle connection failure", async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Failed to connect to server");
+      expect(result.error).toContain("ECONNREFUSED");
+    });
+
+    it("should handle invalid JSON response", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new Error("Unexpected token")),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invalid response from server");
+      expect(result.error).toContain("expected JSON");
+      expect(result.error).toContain("HTTP 200");
+    });
+
+    it("should handle HTTP error with error message", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "Bad request" }),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Bad request");
+    });
+
+    it("should handle HTTP error without error message", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({}),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("HTTP 500");
     });
   });
 });

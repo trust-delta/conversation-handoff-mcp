@@ -215,6 +215,11 @@ export class RemoteStorage implements Storage {
   private serverUrl: string;
 
   constructor(serverUrl: string) {
+    // Validate URL scheme (only http/https allowed)
+    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
+      throw new Error("Server URL must use http:// or https:// protocol");
+    }
+
     // Remove trailing slash if present
     this.serverUrl = serverUrl.replace(/\/$/, "");
   }
@@ -226,24 +231,34 @@ export class RemoteStorage implements Storage {
   ): Promise<StorageResult<T>> {
     const url = `${this.serverUrl}${path}`;
 
+    let response: Response;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method,
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.error || `HTTP ${response.status}` };
-      }
-
-      return { success: true, data };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return { success: false, error: `Failed to connect to server: ${message}` };
     }
+
+    // Parse JSON response safely
+    let data: { error?: string } & T;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        error: `Invalid response from server: expected JSON (HTTP ${response.status})`,
+      };
+    }
+
+    if (!response.ok) {
+      return { success: false, error: data.error || `HTTP ${response.status}` };
+    }
+
+    return { success: true, data };
   }
 
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {

@@ -11,15 +11,30 @@ export interface Config {
   keyPattern: RegExp;
 }
 
+/**
+ * Safely parse an integer from environment variable with fallback.
+ * Returns the default value if the env var is missing, empty, or invalid.
+ */
+function parseEnvInt(envVar: string | undefined, defaultValue: number, min = 1): number {
+  if (!envVar) {
+    return defaultValue;
+  }
+  const parsed = Number.parseInt(envVar, 10);
+  if (Number.isNaN(parsed) || parsed < min) {
+    console.warn(
+      `[conversation-handoff] Invalid config value "${envVar}", using default: ${defaultValue}`
+    );
+    return defaultValue;
+  }
+  return parsed;
+}
+
 export const defaultConfig: Config = {
-  maxHandoffs: Number.parseInt(process.env.HANDOFF_MAX_COUNT || "100", 10),
-  maxConversationBytes: Number.parseInt(
-    process.env.HANDOFF_MAX_CONVERSATION_BYTES || String(1024 * 1024),
-    10
-  ),
-  maxSummaryBytes: Number.parseInt(process.env.HANDOFF_MAX_SUMMARY_BYTES || String(10 * 1024), 10),
-  maxTitleLength: Number.parseInt(process.env.HANDOFF_MAX_TITLE_LENGTH || "200", 10),
-  maxKeyLength: Number.parseInt(process.env.HANDOFF_MAX_KEY_LENGTH || "100", 10),
+  maxHandoffs: parseEnvInt(process.env.HANDOFF_MAX_COUNT, 100),
+  maxConversationBytes: parseEnvInt(process.env.HANDOFF_MAX_CONVERSATION_BYTES, 1024 * 1024),
+  maxSummaryBytes: parseEnvInt(process.env.HANDOFF_MAX_SUMMARY_BYTES, 10 * 1024),
+  maxTitleLength: parseEnvInt(process.env.HANDOFF_MAX_TITLE_LENGTH, 200),
+  maxKeyLength: parseEnvInt(process.env.HANDOFF_MAX_KEY_LENGTH, 100),
   keyPattern: /^[a-zA-Z0-9_-]+$/,
 };
 
