@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-12-06
+
+### Security
+
+- **DoS Protection**: Added HTTP body size limit (Content-Length validation + streaming size check)
+- **Input Validation**:
+  - Proper JSON parse error handling (returns 400 error)
+  - `max_messages` query parameter range validation (1-10000)
+  - Environment variable NaN protection (invalid values fallback to defaults)
+- **URL Validation**: RemoteStorage now only accepts `http://` and `https://` protocols
+- **Error Information Leakage Prevention**: Internal error details are no longer exposed to clients
+
+### Fixed
+
+- Improved fetch exception handling (proper error message on JSON parse failure)
+- Fixed type error in tests
+
+### Added
+
+- RemoteStorage unit tests (+10 tests, total 56)
+
+### Changed
+
+- vitest v2 → v4 (esbuild vulnerability fix)
+
 ## [0.3.0] - 2025-12-06
 
 ### Added
