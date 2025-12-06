@@ -1,5 +1,6 @@
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { LocalStorage, type SaveInput } from "./storage.js";
+import { defaultConfig } from "./validation.js";
 
 // =============================================================================
 // Constants
@@ -26,9 +27,30 @@ export class HttpServer {
   }
 
   private async readBody(req: IncomingMessage): Promise<string> {
+    // Calculate max body size: conversation + summary + metadata overhead
+    const maxBodySize =
+      defaultConfig.maxConversationBytes + defaultConfig.maxSummaryBytes + 10 * 1024;
+
+    // Check Content-Length header first
+    const contentLength = req.headers["content-length"];
+    if (contentLength) {
+      const length = Number.parseInt(contentLength, 10);
+      if (!Number.isNaN(length) && length > maxBodySize) {
+        throw new Error(`Request body too large (max: ${maxBodySize} bytes)`);
+      }
+    }
+
     return new Promise((resolve, reject) => {
       let body = "";
+      let receivedBytes = 0;
+
       req.on("data", (chunk: Buffer) => {
+        receivedBytes += chunk.length;
+        if (receivedBytes > maxBodySize) {
+          req.destroy();
+          reject(new Error(`Request body too large (max: ${maxBodySize} bytes)`));
+          return;
+        }
         body += chunk.toString();
       });
       req.on("end", () => resolve(body));
@@ -72,7 +94,14 @@ export class HttpServer {
       // POST /handoff - Save handoff
       if (method === "POST" && path === "/handoff") {
         const body = await this.readBody(req);
-        const input = JSON.parse(body) as SaveInput;
+
+        let input: SaveInput;
+        try {
+          input = JSON.parse(body) as SaveInput;
+        } catch {
+          this.sendJson(res, 400, { error: "Invalid JSON in request body" });
+          return;
+        }
 
         const result = await this.storage.save(input);
         if (result.success) {
@@ -96,11 +125,21 @@ export class HttpServer {
 
       // GET /handoff/:key - Load handoff
       if (method === "GET" && path === "/handoff/:key" && key) {
-        const maxMessages = query.get("max_messages");
-        const result = await this.storage.load(
-          key,
-          maxMessages ? Number.parseInt(maxMessages, 10) : undefined
-        );
+        const maxMessagesParam = query.get("max_messages");
+        let maxMessages: number | undefined;
+
+        if (maxMessagesParam) {
+          const parsed = Number.parseInt(maxMessagesParam, 10);
+          if (Number.isNaN(parsed) || parsed < 1 || parsed > 10000) {
+            this.sendJson(res, 400, {
+              error: "Invalid max_messages: must be a number between 1 and 10000",
+            });
+            return;
+          }
+          maxMessages = parsed;
+        }
+
+        const result = await this.storage.load(key, maxMessages);
         if (result.success) {
           this.sendJson(res, 200, result.data);
         } else {
@@ -155,8 +194,16 @@ export class HttpServer {
       // Not found
       this.sendJson(res, 404, { error: "Not found" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      this.sendJson(res, 500, { error: message });
+      // Log error internally but don't expose details to client
+      console.error("[conversation-handoff] Request error:", error);
+
+      // Only expose safe error messages (body size limit)
+      if (error instanceof Error && error.message.includes("Request body too large")) {
+        this.sendJson(res, 413, { error: error.message });
+        return;
+      }
+
+      this.sendJson(res, 500, { error: "Internal server error" });
     }
   }
 

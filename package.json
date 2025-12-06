@@ -1,6 +1,6 @@
 {
   "name": "conversation-handoff-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "bin": {
     "conversation-handoff-mcp": "./dist/index.js"
   },
@@ -63,7 +63,7 @@
     "lint-staged": "^16.2.7",
     "rimraf": "^6.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.0.15"
   },
   "lint-staged": {
     "src/**/*.ts": [
