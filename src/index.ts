@@ -1,9 +1,19 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { DEFAULT_PORT, startServer } from "./server.js";
 import { getStorage } from "./storage.js";
+
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as {
+  version: string;
+};
+const VERSION = packageJson.version;
 
 // =============================================================================
 // CLI Arguments
@@ -347,7 +357,7 @@ async function main(): Promise<void> {
   // MCP mode
   const server = new McpServer({
     name: "conversation-handoff",
-    version: "0.3.0",
+    version: VERSION,
   });
 
   registerTools(server);
