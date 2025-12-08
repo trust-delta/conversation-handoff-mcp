@@ -1,9 +1,20 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
 import { getStorage } from "./storage.js";
+
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as {
+  version: string;
+};
+const VERSION = packageJson.version;
 
 // =============================================================================
 // CLI Arguments
@@ -60,7 +71,9 @@ Options:
 
 Modes:
   MCP Mode (default):
-    Runs as an MCP server over stdio. Configure in your MCP client:
+    Runs as an MCP server over stdio. In v0.4.0+, the server is automatically
+    started in the background for data sharing between clients.
+
     {
       "mcpServers": {
         "conversation-handoff": {
@@ -71,31 +84,38 @@ Modes:
     }
 
   HTTP Server Mode (--serve):
-    Runs as a shared HTTP server. Multiple MCP clients can connect:
+    Runs as a shared HTTP server explicitly. Useful for manual server management.
 
-    1. Start server:
-       npx conversation-handoff-mcp --serve
+    npx conversation-handoff-mcp --serve
 
-    2. Configure MCP clients to use the server:
-       {
-         "mcpServers": {
-           "conversation-handoff": {
-             "command": "npx",
-             "args": ["conversation-handoff-mcp"],
-             "env": {
-               "HANDOFF_SERVER": "http://localhost:${DEFAULT_PORT}"
-             }
-           }
-         }
-       }
+  Standalone Mode:
+    To disable auto-server and run in standalone mode:
+
+    {
+      "mcpServers": {
+        "conversation-handoff": {
+          "command": "npx",
+          "args": ["conversation-handoff-mcp"],
+          "env": {
+            "HANDOFF_SERVER": "none"
+          }
+        }
+      }
+    }
 
 Environment Variables:
-  HANDOFF_SERVER               Connect to remote HTTP server URL
+  HANDOFF_SERVER               "none" for standalone, or explicit server URL
+  HANDOFF_PORT_RANGE           Port range for auto-discovery (default: 1099-1200)
+  HANDOFF_RETRY_COUNT          Auto-reconnect retry count (default: 30)
+  HANDOFF_RETRY_INTERVAL       Auto-reconnect interval in ms (default: 10000)
+  HANDOFF_SERVER_TTL           Server auto-shutdown after inactivity (default: 24h, 0=disabled)
   HANDOFF_MAX_COUNT            Max handoffs (default: 100)
   HANDOFF_MAX_CONVERSATION_BYTES  Max conversation size (default: 1MB)
   HANDOFF_MAX_SUMMARY_BYTES    Max summary size (default: 10KB)
   HANDOFF_MAX_TITLE_LENGTH     Max title length (default: 200)
   HANDOFF_MAX_KEY_LENGTH       Max key length (default: 100)
+
+Note: Data is stored in memory only. Handoffs are lost when the server stops.
 `);
 }
 
@@ -113,8 +133,16 @@ function registerTools(server: McpServer): void {
       inputSchema: {
         key: z
           .string()
-          .describe("Unique identifier for this handoff (e.g., 'project-design-2024')"),
-        title: z.string().describe("Human-readable title for the handoff"),
+          .optional()
+          .describe(
+            "Unique identifier for this handoff (e.g., 'project-design-2024'). Auto-generated if omitted."
+          ),
+        title: z
+          .string()
+          .optional()
+          .describe(
+            "Human-readable title for the handoff. Auto-generated from summary if omitted."
+          ),
         summary: z.string().describe("Brief summary of the conversation context"),
         conversation: z
           .string()
@@ -127,10 +155,14 @@ function registerTools(server: McpServer): void {
       },
     },
     async ({ key, title, summary, conversation, from_ai, from_project }) => {
+      // Auto-generate key and title if not provided
+      const actualKey = key || generateKey();
+      const actualTitle = title || generateTitle(summary);
+
       const { storage } = await getStorage();
       const result = await storage.save({
-        key,
-        title,
+        key: actualKey,
+        title: actualTitle,
         summary,
         conversation,
         from_ai,
@@ -138,11 +170,26 @@ function registerTools(server: McpServer): void {
       });
 
       if (!result.success) {
+        // Build error message with suggestion and pending content if available
+        let errorText = `❌ Error: ${result.error}`;
+
+        if (result.suggestion) {
+          errorText += `\n\n💡 ${result.suggestion}`;
+        }
+
+        if (result.pendingContent) {
+          errorText += "\n\n---\n## Pending Handoff Content\n\n";
+          errorText += `**Key:** ${result.pendingContent.key}\n`;
+          errorText += `**Title:** ${result.pendingContent.title}\n`;
+          errorText += `**Summary:** ${result.pendingContent.summary}\n\n`;
+          errorText += `### Conversation\n${result.pendingContent.conversation}`;
+        }
+
         return {
           content: [
             {
               type: "text",
-              text: `❌ Validation error: ${result.error}`,
+              text: errorText,
             },
           ],
         };
@@ -152,7 +199,7 @@ function registerTools(server: McpServer): void {
         content: [
           {
             type: "text",
-            text: `✅ ${result.data?.message}\n\nTo load in another session, use: handoff_load("${key}")`,
+            text: `✅ ${result.data?.message}\n\nTo load in another session, use: handoff_load("${actualKey}")`,
           },
         ],
       };
@@ -347,13 +394,18 @@ async function main(): Promise<void> {
   // MCP mode
   const server = new McpServer({
     name: "conversation-handoff",
-    version: "0.3.0",
+    version: VERSION,
   });
 
   registerTools(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Initialize storage (triggers auto-connect if needed)
+  // This ensures the shared server starts immediately on MCP client connection
+  await getStorage();
+
   console.error("Conversation Handoff MCP server running on stdio");
 }
 

@@ -1,31 +1,109 @@
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
+import type { Server } from "node:http";
+import { findAvailablePort } from "./autoconnect.js";
 import { LocalStorage, type SaveInput } from "./storage.js";
-import { defaultConfig } from "./validation.js";
+import { connectionConfig, defaultConfig } from "./validation.js";
 
 // =============================================================================
 // Constants
 // =============================================================================
 
+/** Default port for the HTTP server */
 export const DEFAULT_PORT = 1099;
 
 // =============================================================================
 // HTTP Server
 // =============================================================================
 
+/**
+ * HTTP server for sharing handoffs between MCP clients.
+ * Provides REST API endpoints for CRUD operations on handoffs.
+ * Supports TTL-based auto-shutdown after period of inactivity.
+ */
 export class HttpServer {
   private storage: LocalStorage;
   private port: number;
+  private lastRequestTime: number = Date.now();
+  private ttlCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private server: Server | null = null;
 
+  /**
+   * Create a new HTTP server instance.
+   * @param port - Port number to listen on (default: 1099)
+   */
   constructor(port: number = DEFAULT_PORT) {
+    // Use memory-based storage (data is shared across MCP clients via HTTP)
     this.storage = new LocalStorage();
     this.port = port;
   }
 
+  /**
+   * Update last request time (called on every request)
+   */
+  private touchLastRequest(): void {
+    this.lastRequestTime = Date.now();
+  }
+
+  /**
+   * Start TTL monitoring (auto-shutdown after inactivity)
+   */
+  private startTtlMonitor(): void {
+    const ttlMs = connectionConfig.serverTtlMs;
+
+    // TTL disabled if 0
+    if (ttlMs <= 0) {
+      return;
+    }
+
+    // Check every minute
+    const checkIntervalMs = Math.min(60 * 1000, ttlMs / 2);
+
+    this.ttlCheckInterval = setInterval(() => {
+      const elapsed = Date.now() - this.lastRequestTime;
+      if (elapsed >= ttlMs) {
+        console.log(
+          `Server TTL expired (no requests for ${Math.round(ttlMs / 1000 / 60)} minutes). Shutting down...`
+        );
+        this.shutdown();
+      }
+    }, checkIntervalMs);
+
+    // Don't keep process alive just for TTL check
+    this.ttlCheckInterval.unref();
+  }
+
+  /**
+   * Shutdown the server gracefully
+   */
+  private shutdown(): void {
+    if (this.ttlCheckInterval) {
+      clearInterval(this.ttlCheckInterval);
+      this.ttlCheckInterval = null;
+    }
+    if (this.server) {
+      this.server.close();
+      this.server = null;
+    }
+    process.exit(0);
+  }
+
+  /**
+   * Send JSON response to client.
+   * @param res - HTTP response object
+   * @param statusCode - HTTP status code
+   * @param data - Data to serialize as JSON
+   */
   private sendJson(res: ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, { "Content-Type": "application/json" });
     res.end(JSON.stringify(data));
   }
 
+  /**
+   * Read and validate request body.
+   * @param req - HTTP request object
+   * @returns Request body as string
+   * @throws Error if body exceeds size limit
+   */
   private async readBody(req: IncomingMessage): Promise<string> {
     // Calculate max body size: conversation + summary + metadata overhead
     const maxBodySize =
@@ -58,6 +136,11 @@ export class HttpServer {
     });
   }
 
+  /**
+   * Parse URL into route components.
+   * @param url - Request URL
+   * @returns Parsed route with path, optional key, and query params
+   */
   private parseRoute(url: string): { path: string; key?: string; query: URLSearchParams } {
     const urlObj = new URL(url, `http://localhost:${this.port}`);
     const pathname = urlObj.pathname;
@@ -75,7 +158,15 @@ export class HttpServer {
     return { path: pathname, query: urlObj.searchParams };
   }
 
+  /**
+   * Handle incoming HTTP request and route to appropriate handler.
+   * @param req - HTTP request object
+   * @param res - HTTP response object
+   */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Update last request time for TTL monitoring
+    this.touchLastRequest();
+
     const method = req.method || "GET";
     const { path, key, query } = this.parseRoute(req.url || "/");
 
@@ -207,16 +298,20 @@ export class HttpServer {
     }
   }
 
-  start(): Promise<void> {
-    return new Promise((resolve) => {
-      const server = createServer((req, res) => {
+  /**
+   * Start the HTTP server and begin listening for requests.
+   * @returns Promise resolving to the Node.js Server instance
+   */
+  start(): Promise<Server> {
+    return new Promise((resolve, reject) => {
+      this.server = createServer((req, res) => {
         this.handleRequest(req, res).catch((error) => {
           console.error("Request error:", error);
           this.sendJson(res, 500, { error: "Internal server error" });
         });
       });
 
-      server.listen(this.port, () => {
+      this.server.listen(this.port, () => {
         console.log(`Conversation Handoff Server running on http://localhost:${this.port}`);
         console.log("");
         console.log("Endpoints:");
@@ -227,23 +322,57 @@ export class HttpServer {
         console.log("  DELETE /handoff       - Delete all handoffs");
         console.log("  GET    /stats         - Get storage statistics");
         console.log("");
-        console.log("Configure MCP clients with:");
-        console.log(`  HANDOFF_SERVER=http://localhost:${this.port}`);
-        resolve();
+        console.log("Note: Data is stored in memory and will be lost when server stops.");
+
+        // Show TTL info if enabled
+        const ttlMs = connectionConfig.serverTtlMs;
+        if (ttlMs > 0) {
+          const ttlMinutes = Math.round(ttlMs / 1000 / 60);
+          console.log(`TTL: Server will auto-shutdown after ${ttlMinutes} minutes of inactivity.`);
+        }
+
+        // Start TTL monitoring
+        this.startTtlMonitor();
+
+        // biome-ignore lint/style/noNonNullAssertion: server is guaranteed to exist here
+        resolve(this.server!);
       });
 
-      server.on("error", (error: NodeJS.ErrnoException) => {
+      this.server.on("error", (error: NodeJS.ErrnoException) => {
         if (error.code === "EADDRINUSE") {
           console.error(`Error: Port ${this.port} is already in use`);
-          process.exit(1);
+          reject(error);
+          return;
         }
         throw error;
       });
+
+      // Cleanup on process exit
+      const cleanup = () => {
+        this.shutdown();
+      };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
     });
   }
 }
 
-export async function startServer(port: number = DEFAULT_PORT): Promise<void> {
-  const server = new HttpServer(port);
+/**
+ * Start the handoff HTTP server.
+ * If no port specified and default is in use, finds an available port.
+ * @param port - Optional port number (default: finds available port in range)
+ */
+export async function startServer(port?: number): Promise<void> {
+  let targetPort = port ?? DEFAULT_PORT;
+
+  // If no port specified and default is in use, find available port
+  if (port === undefined) {
+    const availablePort = await findAvailablePort(connectionConfig.portRange);
+    if (availablePort !== null) {
+      targetPort = availablePort;
+    }
+  }
+
+  const server = new HttpServer(targetPort);
   await server.start();
 }

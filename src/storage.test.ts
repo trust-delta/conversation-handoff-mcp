@@ -61,6 +61,68 @@ describe("LocalStorage", () => {
       const loaded = await storage.load(validInput.key);
       expect(loaded.data?.title).toBe("Updated Title");
     });
+
+    it("should auto-delete oldest handoff when at capacity (FIFO)", async () => {
+      // Fill up to max capacity
+      for (let i = 0; i < testConfig.maxHandoffs; i++) {
+        await storage.save({
+          ...validInput,
+          key: `handoff-${i}`,
+          title: `Handoff ${i}`,
+        });
+        // Small delay to ensure different timestamps
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      // Verify we're at capacity
+      const listBefore = await storage.list();
+      expect(listBefore.data?.length).toBe(testConfig.maxHandoffs);
+
+      // Save one more - should succeed by deleting oldest
+      const result = await storage.save({
+        ...validInput,
+        key: "new-handoff",
+        title: "New Handoff",
+      });
+      expect(result.success).toBe(true);
+
+      // Should still be at max capacity
+      const listAfter = await storage.list();
+      expect(listAfter.data?.length).toBe(testConfig.maxHandoffs);
+
+      // Oldest (handoff-0) should be gone
+      const oldestDeleted = await storage.load("handoff-0");
+      expect(oldestDeleted.success).toBe(false);
+
+      // New one should exist
+      const newExists = await storage.load("new-handoff");
+      expect(newExists.success).toBe(true);
+    });
+
+    it("should not delete when updating existing key at capacity", async () => {
+      // Fill up to max capacity
+      for (let i = 0; i < testConfig.maxHandoffs; i++) {
+        await storage.save({
+          ...validInput,
+          key: `handoff-${i}`,
+          title: `Handoff ${i}`,
+        });
+      }
+
+      // Update existing key - should not delete anything
+      const result = await storage.save({
+        ...validInput,
+        key: "handoff-5",
+        title: "Updated Handoff 5",
+      });
+      expect(result.success).toBe(true);
+
+      // All original keys should still exist
+      for (let i = 0; i < testConfig.maxHandoffs; i++) {
+        const loaded = await storage.load(`handoff-${i}`);
+        expect(loaded.success).toBe(true);
+      }
+    });
   });
 
   describe("list", () => {
@@ -301,6 +363,100 @@ describe("RemoteStorage", () => {
       expect(result.error).toBe("HTTP 500");
     });
   });
+
+  describe("auto-reconnection", () => {
+    beforeEach(() => {
+      resetStorageState();
+    });
+
+    afterEach(() => {
+      resetStorageState();
+    });
+
+    it("should attempt reconnection on connection failure and succeed", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        callCount++;
+        // First call fails (original server down)
+        if (callCount === 1) {
+          return Promise.reject(new Error("ECONNREFUSED"));
+        }
+        // Second call is health check for port scanning - succeed
+        if (url.endsWith("/")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ name: "conversation-handoff-server" }),
+          });
+        }
+        // Third call is the retried request - succeed
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ key: "test", title: "Test" }]),
+        });
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      // Should succeed after reconnection
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([{ key: "test", title: "Test" }]);
+    });
+
+    it("should give up after max reconnection attempts", async () => {
+      // All calls fail
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.list();
+
+      // Should fail after exhausting retries
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Failed to connect to server");
+    });
+
+    it("should reset reconnect attempts after successful request", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        callCount++;
+        // First request succeeds
+        if (callCount <= 2) {
+          if (url.endsWith("/handoff")) {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve([]),
+            });
+          }
+        }
+        // Second request fails then succeeds after reconnect
+        if (callCount === 3) {
+          return Promise.reject(new Error("ECONNREFUSED"));
+        }
+        // Health check succeeds
+        if (url.endsWith("/")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ name: "conversation-handoff-server" }),
+          });
+        }
+        // Retried request succeeds
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ key: "new" }]),
+        });
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+
+      // First request succeeds
+      const result1 = await storage.list();
+      expect(result1.success).toBe(true);
+
+      // Second request fails then reconnects successfully
+      const result2 = await storage.list();
+      expect(result2.success).toBe(true);
+    });
+  });
 });
 
 describe("getStorage", () => {
@@ -328,61 +484,24 @@ describe("getStorage", () => {
     expect(result.serverUrl).toBeUndefined();
   });
 
-  it("should return standalone mode when default server is not available", async () => {
+  it("should return standalone mode when auto-connect fails (v0.4.0+ silent fallback)", async () => {
     // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 
-    // Mock fetch to simulate server not available
+    // Mock fetch to simulate no server available anywhere
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
+    // v0.4.0+: No warnings, silent fallback
     const result = await getStorage();
 
     expect(result.mode).toBe("standalone");
     expect(result.storage).toBeInstanceOf(LocalStorage);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not available"));
   });
 
-  it("should return standalone mode when custom server is not available", async () => {
+  it("should return shared mode when explicit server URL is provided", async () => {
     process.env.HANDOFF_SERVER = "http://localhost:3000";
 
-    // Mock fetch to simulate server not available
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const result = await getStorage();
-
-    expect(result.mode).toBe("standalone");
-    expect(result.storage).toBeInstanceOf(LocalStorage);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Cannot connect to server"));
-  });
-
-  it("should return shared mode when server is available", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
-    delete process.env.HANDOFF_SERVER;
-
-    // Mock fetch to simulate server available
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-    } as Response);
-
-    const result = await getStorage();
-
-    expect(result.mode).toBe("shared");
-    expect(result.storage).toBeInstanceOf(RemoteStorage);
-    expect(result.serverUrl).toBe("http://localhost:1099");
-  });
-
-  it("should return shared mode when custom server is available", async () => {
-    process.env.HANDOFF_SERVER = "http://localhost:3000";
-
-    // Mock fetch to simulate server available
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-    } as Response);
-
+    // When explicit URL is set, it's used directly without health check
     const result = await getStorage();
 
     expect(result.mode).toBe("shared");
@@ -390,83 +509,32 @@ describe("getStorage", () => {
     expect(result.serverUrl).toBe("http://localhost:3000");
   });
 
-  it("should fallback to standalone when server returns non-ok response", async () => {
+  it("should cache auto-connect result per process", async () => {
     // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 
-    // Mock fetch to simulate server error response
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-    } as Response);
+    // Mock fetch to fail initially
+    const fetchMock = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    globalThis.fetch = fetchMock;
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const result = await getStorage();
-
-    expect(result.mode).toBe("standalone");
-    expect(result.storage).toBeInstanceOf(LocalStorage);
-    expect(warnSpy).toHaveBeenCalled();
-  });
-
-  it("should switch from standalone to shared when server becomes available", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
-    delete process.env.HANDOFF_SERVER;
-
-    // First call: server not available
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-
+    // First call triggers auto-connect
     const result1 = await getStorage();
     expect(result1.mode).toBe("standalone");
 
-    // Second call: server becomes available
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
-
-    const result2 = await getStorage();
-    expect(result2.mode).toBe("shared");
-  });
-
-  it("should switch from shared to standalone when server goes down", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
-    delete process.env.HANDOFF_SERVER;
-
-    // First call: server available
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
-
-    const result1 = await getStorage();
-    expect(result1.mode).toBe("shared");
-
-    // Second call: server goes down
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-
+    // Second call uses cached result (no additional fetch calls for auto-connect)
+    const callCount = fetchMock.mock.calls.length;
     const result2 = await getStorage();
     expect(result2.mode).toBe("standalone");
+    // Cache prevents new auto-connect attempts
+    expect(fetchMock.mock.calls.length).toBe(callCount);
   });
 
-  it("should not warn twice when already in standalone mode", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
-    delete process.env.HANDOFF_SERVER;
-
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    // Call twice
-    await getStorage();
-    await getStorage();
-
-    // Warning should only be called once (on first mode change)
-    expect(warnSpy).toHaveBeenCalledTimes(2); // 2 warnings on first call, 0 on second
-  });
-
-  it("should preserve local storage data across mode switches", async () => {
+  it("should preserve local storage data in standalone mode", async () => {
     // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 
     // Start in standalone mode
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
-    vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const result1 = await getStorage();
     await result1.storage.save({
@@ -478,9 +546,7 @@ describe("getStorage", () => {
       from_project: "",
     });
 
-    // Switch to shared mode (simulated, but local storage should persist)
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Still down"));
-
+    // Get storage again
     const result2 = await getStorage();
     const loaded = await result2.storage.load("test-key");
 

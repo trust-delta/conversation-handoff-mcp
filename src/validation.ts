@@ -11,6 +11,19 @@ export interface Config {
   keyPattern: RegExp;
 }
 
+export interface PortRange {
+  start: number;
+  end: number;
+}
+
+export interface ConnectionConfig {
+  portRange: PortRange;
+  retryCount: number;
+  retryIntervalMs: number;
+  /** Server TTL in ms (0 = disabled). Server shuts down after this time of inactivity. */
+  serverTtlMs: number;
+}
+
 /**
  * Safely parse an integer from environment variable with fallback.
  * Returns the default value if the env var is missing, empty, or invalid.
@@ -138,3 +151,39 @@ export function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
 }
+
+// =============================================================================
+// Connection Configuration
+// =============================================================================
+
+/**
+ * Parse port range from environment variable (format: "start-end")
+ */
+function parsePortRange(envVar: string | undefined, defaultRange: PortRange): PortRange {
+  if (!envVar) {
+    return defaultRange;
+  }
+  const match = envVar.match(/^(\d+)-(\d+)$/);
+  if (!match || !match[1] || !match[2]) {
+    console.warn(
+      `[conversation-handoff] Invalid port range "${envVar}", using default: ${defaultRange.start}-${defaultRange.end}`
+    );
+    return defaultRange;
+  }
+  const start = Number.parseInt(match[1], 10);
+  const end = Number.parseInt(match[2], 10);
+  if (start < 1 || start > 65535 || end < 1 || end > 65535 || start > end) {
+    console.warn(
+      `[conversation-handoff] Invalid port range "${envVar}", using default: ${defaultRange.start}-${defaultRange.end}`
+    );
+    return defaultRange;
+  }
+  return { start, end };
+}
+
+export const connectionConfig: ConnectionConfig = {
+  portRange: parsePortRange(process.env.HANDOFF_PORT_RANGE, { start: 1099, end: 1200 }),
+  retryCount: parseEnvInt(process.env.HANDOFF_RETRY_COUNT, 30),
+  retryIntervalMs: parseEnvInt(process.env.HANDOFF_RETRY_INTERVAL, 10000),
+  serverTtlMs: parseEnvInt(process.env.HANDOFF_SERVER_TTL, 24 * 60 * 60 * 1000, 0), // Default: 24 hours, min: 0 (disabled)
+};
