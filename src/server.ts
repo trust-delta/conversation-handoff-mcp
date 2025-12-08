@@ -8,12 +8,18 @@ import { connectionConfig, defaultConfig } from "./validation.js";
 // Constants
 // =============================================================================
 
+/** Default port for the HTTP server */
 export const DEFAULT_PORT = 1099;
 
 // =============================================================================
 // HTTP Server
 // =============================================================================
 
+/**
+ * HTTP server for sharing handoffs between MCP clients.
+ * Provides REST API endpoints for CRUD operations on handoffs.
+ * Supports TTL-based auto-shutdown after period of inactivity.
+ */
 export class HttpServer {
   private storage: LocalStorage;
   private port: number;
@@ -21,6 +27,10 @@ export class HttpServer {
   private ttlCheckInterval: ReturnType<typeof setInterval> | null = null;
   private server: Server | null = null;
 
+  /**
+   * Create a new HTTP server instance.
+   * @param port - Port number to listen on (default: 1099)
+   */
   constructor(port: number = DEFAULT_PORT) {
     // Use memory-based storage (data is shared across MCP clients via HTTP)
     this.storage = new LocalStorage();
@@ -77,11 +87,23 @@ export class HttpServer {
     process.exit(0);
   }
 
+  /**
+   * Send JSON response to client.
+   * @param res - HTTP response object
+   * @param statusCode - HTTP status code
+   * @param data - Data to serialize as JSON
+   */
   private sendJson(res: ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, { "Content-Type": "application/json" });
     res.end(JSON.stringify(data));
   }
 
+  /**
+   * Read and validate request body.
+   * @param req - HTTP request object
+   * @returns Request body as string
+   * @throws Error if body exceeds size limit
+   */
   private async readBody(req: IncomingMessage): Promise<string> {
     // Calculate max body size: conversation + summary + metadata overhead
     const maxBodySize =
@@ -114,6 +136,11 @@ export class HttpServer {
     });
   }
 
+  /**
+   * Parse URL into route components.
+   * @param url - Request URL
+   * @returns Parsed route with path, optional key, and query params
+   */
   private parseRoute(url: string): { path: string; key?: string; query: URLSearchParams } {
     const urlObj = new URL(url, `http://localhost:${this.port}`);
     const pathname = urlObj.pathname;
@@ -131,6 +158,11 @@ export class HttpServer {
     return { path: pathname, query: urlObj.searchParams };
   }
 
+  /**
+   * Handle incoming HTTP request and route to appropriate handler.
+   * @param req - HTTP request object
+   * @param res - HTTP response object
+   */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Update last request time for TTL monitoring
     this.touchLastRequest();
@@ -266,6 +298,10 @@ export class HttpServer {
     }
   }
 
+  /**
+   * Start the HTTP server and begin listening for requests.
+   * @returns Promise resolving to the Node.js Server instance
+   */
   start(): Promise<Server> {
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
@@ -321,6 +357,11 @@ export class HttpServer {
   }
 }
 
+/**
+ * Start the handoff HTTP server.
+ * If no port specified and default is in use, finds an available port.
+ * @param port - Optional port number (default: finds available port in range)
+ */
 export async function startServer(port?: number): Promise<void> {
   let targetPort = port ?? DEFAULT_PORT;
 

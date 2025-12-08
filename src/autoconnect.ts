@@ -14,8 +14,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Port Scanning
 // =============================================================================
 
+/** Timeout for health check requests in milliseconds */
 const HEALTH_CHECK_TIMEOUT_MS = 300;
 
+/**
+ * Check if a handoff server is running on the specified port.
+ * @param port - Port number to check
+ * @returns true if a handoff server is responding on the port
+ */
 async function checkPort(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://localhost:${port}/`, {
@@ -33,7 +39,9 @@ async function checkPort(port: number): Promise<boolean> {
 }
 
 /**
- * Scan ports in parallel to find a running server
+ * Scan ports in parallel to find a running handoff server.
+ * @param portRange - Port range to scan (start and end inclusive)
+ * @returns Port number if a server is found, null otherwise
  */
 export async function scanForServer(portRange: PortRange): Promise<number | null> {
   const ports = [];
@@ -57,7 +65,9 @@ export async function scanForServer(portRange: PortRange): Promise<number | null
 }
 
 /**
- * Find an available port in the range
+ * Find an available (unused) port in the given range.
+ * @param portRange - Port range to search (start and end inclusive)
+ * @returns First available port number, or null if all ports are in use
  */
 export async function findAvailablePort(portRange: PortRange): Promise<number | null> {
   for (let port = portRange.start; port <= portRange.end; port++) {
@@ -69,6 +79,11 @@ export async function findAvailablePort(portRange: PortRange): Promise<number | 
   return null;
 }
 
+/**
+ * Check if a port is currently in use.
+ * @param port - Port number to check
+ * @returns true if the port is in use, false if available
+ */
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createNetServer();
@@ -86,7 +101,9 @@ async function isPortInUse(port: number): Promise<boolean> {
 // =============================================================================
 
 /**
- * Start the server in background (detached process)
+ * Start the handoff server as a detached background process.
+ * The process will continue running even after the parent exits.
+ * @param port - Port number for the server to listen on
  */
 export function startServerBackground(port: number): void {
   const indexPath = join(__dirname, "index.js");
@@ -101,7 +118,12 @@ export function startServerBackground(port: number): void {
 }
 
 /**
- * Wait for server to become available
+ * Wait for a server to become available on the specified port.
+ * Polls the port repeatedly until the server responds or max attempts reached.
+ * @param port - Port number to wait for
+ * @param maxAttempts - Maximum number of polling attempts (default: 20)
+ * @param intervalMs - Interval between polling attempts in ms (default: 100)
+ * @returns true if server became available, false if timed out
  */
 export async function waitForServer(
   port: number,
@@ -129,8 +151,15 @@ export interface AutoConnectResult {
 }
 
 /**
- * Automatically discover or start a server
- * Returns the server URL if successful, null for standalone mode
+ * Automatically discover an existing server or start a new one.
+ * This is the main entry point for auto-connect functionality.
+ *
+ * Process:
+ * 1. Scan port range for existing server
+ * 2. If not found, find available port and start new server
+ * 3. Return server URL or fall back to standalone mode
+ *
+ * @returns AutoConnectResult with serverUrl, mode, and autoStarted flag
  */
 export async function autoConnect(): Promise<AutoConnectResult> {
   const { portRange } = connectionConfig;
@@ -181,12 +210,18 @@ export async function autoConnect(): Promise<AutoConnectResult> {
 // Utilities
 // =============================================================================
 
+/**
+ * Sleep for specified milliseconds.
+ * @param ms - Milliseconds to sleep
+ */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Generate a unique key with timestamp
+ * Generate a unique handoff key with timestamp and random suffix.
+ * Format: handoff-YYYYMMDDHHMMSS-random6chars
+ * @returns Unique key string
  */
 export function generateKey(): string {
   const now = new Date();
@@ -196,7 +231,10 @@ export function generateKey(): string {
 }
 
 /**
- * Generate title from summary (first 50 chars)
+ * Generate a title from the summary text.
+ * Truncates to 50 characters with ellipsis if needed.
+ * @param summary - Summary text to generate title from
+ * @returns Title string (max 50 chars)
  */
 export function generateTitle(summary: string): string {
   const trimmed = summary.trim();

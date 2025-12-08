@@ -78,10 +78,19 @@ export interface Storage {
 // Local Memory Storage
 // =============================================================================
 
+/**
+ * Local in-memory storage implementation.
+ * Data is stored in a Map and persists only for the process lifetime.
+ * Supports FIFO auto-deletion when max capacity is reached.
+ */
 export class LocalStorage implements Storage {
   private handoffs = new Map<string, Handoff>();
   private config: Config;
 
+  /**
+   * Create a new LocalStorage instance.
+   * @param config - Storage configuration (uses defaults if not provided)
+   */
   constructor(config: Config = defaultConfig) {
     this.config = config;
   }
@@ -108,6 +117,12 @@ export class LocalStorage implements Storage {
     return oldestKey;
   }
 
+  /**
+   * Save a handoff to storage.
+   * Automatically deletes oldest entry if at capacity (FIFO).
+   * @param input - Handoff data to save
+   * @returns Result with success message or error
+   */
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {
     // FIFO: Delete oldest handoff if at capacity (for new keys only)
     const isNewKey = !this.handoffs.has(input.key);
@@ -147,6 +162,10 @@ export class LocalStorage implements Storage {
     };
   }
 
+  /**
+   * List all saved handoffs (summaries only, no conversation content).
+   * @returns Result with array of handoff summaries
+   */
   async list(): Promise<StorageResult<HandoffSummary[]>> {
     const summaries: HandoffSummary[] = Array.from(this.handoffs.values()).map((h) => ({
       key: h.key,
@@ -160,6 +179,12 @@ export class LocalStorage implements Storage {
     return { success: true, data: summaries };
   }
 
+  /**
+   * Load a specific handoff by key.
+   * @param key - Unique identifier of the handoff
+   * @param maxMessages - Optional limit on number of messages to return
+   * @returns Result with full handoff data or error if not found
+   */
   async load(key: string, maxMessages?: number): Promise<StorageResult<Handoff>> {
     const handoff = this.handoffs.get(key);
 
@@ -185,6 +210,11 @@ export class LocalStorage implements Storage {
     return { success: true, data: handoff };
   }
 
+  /**
+   * Clear handoffs from storage.
+   * @param key - Optional key to clear specific handoff; if omitted, clears all
+   * @returns Result with success message and count of cleared items
+   */
   async clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>> {
     if (key) {
       if (this.handoffs.has(key)) {
@@ -199,6 +229,10 @@ export class LocalStorage implements Storage {
     return { success: true, data: { message: "All handoffs cleared", count } };
   }
 
+  /**
+   * Get storage statistics including current usage and limits.
+   * @returns Result with storage stats
+   */
   async stats(): Promise<StorageResult<StorageStats>> {
     let totalBytes = 0;
     for (const h of this.handoffs.values()) {
@@ -230,11 +264,18 @@ export class LocalStorage implements Storage {
     };
   }
 
-  // For internal use (HTTP server)
+  /**
+   * Get the internal handoffs Map (for HTTP server use).
+   * @returns Map of all handoffs keyed by their key
+   */
   getHandoffsMap(): Map<string, Handoff> {
     return this.handoffs;
   }
 
+  /**
+   * Get the storage configuration.
+   * @returns Current configuration object
+   */
   getConfig(): Config {
     return this.config;
   }
@@ -245,8 +286,9 @@ export class LocalStorage implements Storage {
 // =============================================================================
 
 /**
- * Attempt to reconnect to a server (discover or start new one)
- * This bypasses the cache for retry purposes
+ * Attempt to reconnect to a server (discover or start new one).
+ * Bypasses the cache for retry purposes.
+ * @returns Server URL if reconnection successful, null otherwise
  */
 async function attemptReconnect(): Promise<string | null> {
   const result = await autoConnect();
@@ -258,11 +300,20 @@ async function attemptReconnect(): Promise<string | null> {
   return null;
 }
 
+/**
+ * Remote storage implementation that connects to an HTTP server.
+ * Supports automatic reconnection when the server goes down.
+ */
 export class RemoteStorage implements Storage {
   private serverUrl: string;
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts: number;
 
+  /**
+   * Create a new RemoteStorage instance.
+   * @param serverUrl - HTTP server URL (must use http:// or https://)
+   * @throws Error if URL doesn't use http/https protocol
+   */
   constructor(serverUrl: string) {
     // Validate URL scheme (only http/https allowed)
     if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
@@ -275,13 +326,20 @@ export class RemoteStorage implements Storage {
   }
 
   /**
-   * Attempt to reconnect to a server and update the URL
-   * Returns true if reconnection was successful
+   * Attempt to reconnect to a server and update the URL.
+   * Applies retry delay between consecutive failed attempts.
+   * @returns true if reconnection was successful
    */
   private async tryReconnect(): Promise<boolean> {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       return false;
     }
+
+    // Apply delay before retry (except for first attempt)
+    if (this.reconnectAttempts > 0) {
+      await this.sleep(connectionConfig.retryIntervalMs);
+    }
+
     this.reconnectAttempts++;
 
     const newUrl = await attemptReconnect();
@@ -292,6 +350,22 @@ export class RemoteStorage implements Storage {
     return false;
   }
 
+  /**
+   * Sleep for specified milliseconds.
+   * @param ms - Milliseconds to sleep
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Send HTTP request to the server with automatic reconnection.
+   * @param method - HTTP method (GET, POST, DELETE)
+   * @param path - API endpoint path
+   * @param body - Optional request body for POST requests
+   * @param saveInput - Optional save input for recovery on failure
+   * @returns Storage result with data or error
+   */
   private async request<T>(
     method: string,
     path: string,
@@ -351,19 +425,23 @@ export class RemoteStorage implements Storage {
     return { success: true, data };
   }
 
+  /** @inheritdoc */
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {
     return this.request("POST", "/handoff", input, input);
   }
 
+  /** @inheritdoc */
   async list(): Promise<StorageResult<HandoffSummary[]>> {
     return this.request("GET", "/handoff");
   }
 
+  /** @inheritdoc */
   async load(key: string, maxMessages?: number): Promise<StorageResult<Handoff>> {
     const params = maxMessages ? `?max_messages=${maxMessages}` : "";
     return this.request("GET", `/handoff/${encodeURIComponent(key)}${params}`);
   }
 
+  /** @inheritdoc */
   async clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>> {
     if (key) {
       return this.request("DELETE", `/handoff/${encodeURIComponent(key)}`);
@@ -371,6 +449,7 @@ export class RemoteStorage implements Storage {
     return this.request("DELETE", "/handoff");
   }
 
+  /** @inheritdoc */
   async stats(): Promise<StorageResult<StorageStats>> {
     return this.request("GET", "/stats");
   }
@@ -392,6 +471,11 @@ export interface GetStorageResult {
 // Singleton local storage instance (preserves data across mode switches)
 let localStorageInstance: LocalStorage | null = null;
 
+/**
+ * Get or create the singleton LocalStorage instance.
+ * Preserves data across mode switches within the same process.
+ * @returns LocalStorage singleton instance
+ */
 function getLocalStorage(): LocalStorage {
   if (!localStorageInstance) {
     localStorageInstance = new LocalStorage();
