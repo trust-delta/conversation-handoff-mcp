@@ -1,6 +1,8 @@
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
+import type { Server } from "node:http";
+import { findAvailablePort } from "./autoconnect.js";
 import { LocalStorage, type SaveInput } from "./storage.js";
-import { defaultConfig } from "./validation.js";
+import { connectionConfig, defaultConfig } from "./validation.js";
 
 // =============================================================================
 // Constants
@@ -15,10 +17,64 @@ export const DEFAULT_PORT = 1099;
 export class HttpServer {
   private storage: LocalStorage;
   private port: number;
+  private lastRequestTime: number = Date.now();
+  private ttlCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private server: Server | null = null;
 
   constructor(port: number = DEFAULT_PORT) {
+    // Use memory-based storage (data is shared across MCP clients via HTTP)
     this.storage = new LocalStorage();
     this.port = port;
+  }
+
+  /**
+   * Update last request time (called on every request)
+   */
+  private touchLastRequest(): void {
+    this.lastRequestTime = Date.now();
+  }
+
+  /**
+   * Start TTL monitoring (auto-shutdown after inactivity)
+   */
+  private startTtlMonitor(): void {
+    const ttlMs = connectionConfig.serverTtlMs;
+
+    // TTL disabled if 0
+    if (ttlMs <= 0) {
+      return;
+    }
+
+    // Check every minute
+    const checkIntervalMs = Math.min(60 * 1000, ttlMs / 2);
+
+    this.ttlCheckInterval = setInterval(() => {
+      const elapsed = Date.now() - this.lastRequestTime;
+      if (elapsed >= ttlMs) {
+        console.log(
+          `Server TTL expired (no requests for ${Math.round(ttlMs / 1000 / 60)} minutes). Shutting down...`
+        );
+        this.shutdown();
+      }
+    }, checkIntervalMs);
+
+    // Don't keep process alive just for TTL check
+    this.ttlCheckInterval.unref();
+  }
+
+  /**
+   * Shutdown the server gracefully
+   */
+  private shutdown(): void {
+    if (this.ttlCheckInterval) {
+      clearInterval(this.ttlCheckInterval);
+      this.ttlCheckInterval = null;
+    }
+    if (this.server) {
+      this.server.close();
+      this.server = null;
+    }
+    process.exit(0);
   }
 
   private sendJson(res: ServerResponse, statusCode: number, data: unknown): void {
@@ -76,6 +132,9 @@ export class HttpServer {
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Update last request time for TTL monitoring
+    this.touchLastRequest();
+
     const method = req.method || "GET";
     const { path, key, query } = this.parseRoute(req.url || "/");
 
@@ -207,16 +266,16 @@ export class HttpServer {
     }
   }
 
-  start(): Promise<void> {
-    return new Promise((resolve) => {
-      const server = createServer((req, res) => {
+  start(): Promise<Server> {
+    return new Promise((resolve, reject) => {
+      this.server = createServer((req, res) => {
         this.handleRequest(req, res).catch((error) => {
           console.error("Request error:", error);
           this.sendJson(res, 500, { error: "Internal server error" });
         });
       });
 
-      server.listen(this.port, () => {
+      this.server.listen(this.port, () => {
         console.log(`Conversation Handoff Server running on http://localhost:${this.port}`);
         console.log("");
         console.log("Endpoints:");
@@ -227,23 +286,52 @@ export class HttpServer {
         console.log("  DELETE /handoff       - Delete all handoffs");
         console.log("  GET    /stats         - Get storage statistics");
         console.log("");
-        console.log("Configure MCP clients with:");
-        console.log(`  HANDOFF_SERVER=http://localhost:${this.port}`);
-        resolve();
+        console.log("Note: Data is stored in memory and will be lost when server stops.");
+
+        // Show TTL info if enabled
+        const ttlMs = connectionConfig.serverTtlMs;
+        if (ttlMs > 0) {
+          const ttlMinutes = Math.round(ttlMs / 1000 / 60);
+          console.log(`TTL: Server will auto-shutdown after ${ttlMinutes} minutes of inactivity.`);
+        }
+
+        // Start TTL monitoring
+        this.startTtlMonitor();
+
+        // biome-ignore lint/style/noNonNullAssertion: server is guaranteed to exist here
+        resolve(this.server!);
       });
 
-      server.on("error", (error: NodeJS.ErrnoException) => {
+      this.server.on("error", (error: NodeJS.ErrnoException) => {
         if (error.code === "EADDRINUSE") {
           console.error(`Error: Port ${this.port} is already in use`);
-          process.exit(1);
+          reject(error);
+          return;
         }
         throw error;
       });
+
+      // Cleanup on process exit
+      const cleanup = () => {
+        this.shutdown();
+      };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
     });
   }
 }
 
-export async function startServer(port: number = DEFAULT_PORT): Promise<void> {
-  const server = new HttpServer(port);
+export async function startServer(port?: number): Promise<void> {
+  let targetPort = port ?? DEFAULT_PORT;
+
+  // If no port specified and default is in use, find available port
+  if (port === undefined) {
+    const availablePort = await findAvailablePort(connectionConfig.portRange);
+    if (availablePort !== null) {
+      targetPort = availablePort;
+    }
+  }
+
+  const server = new HttpServer(targetPort);
   await server.start();
 }

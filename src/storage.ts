@@ -1,4 +1,5 @@
-import { defaultConfig, formatBytes, validateHandoff } from "./validation.js";
+import { type AutoConnectResult, autoConnect } from "./autoconnect.js";
+import { connectionConfig, defaultConfig, formatBytes, validateHandoff } from "./validation.js";
 import type { Config } from "./validation.js";
 
 // =============================================================================
@@ -55,6 +56,10 @@ export interface StorageResult<T> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Suggested action when error occurs */
+  suggestion?: string;
+  /** Content that failed to save (for manual recovery) */
+  pendingContent?: SaveInput;
 }
 
 // =============================================================================
@@ -81,7 +86,35 @@ export class LocalStorage implements Storage {
     this.config = config;
   }
 
+  /**
+   * Delete the oldest handoff (FIFO) to make room for new ones
+   */
+  private deleteOldestHandoff(): string | null {
+    let oldestKey: string | null = null;
+    let oldestDate: Date | null = null;
+
+    for (const [key, handoff] of this.handoffs) {
+      const createdAt = new Date(handoff.created_at);
+      if (oldestDate === null || createdAt < oldestDate) {
+        oldestDate = createdAt;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      this.handoffs.delete(oldestKey);
+    }
+
+    return oldestKey;
+  }
+
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {
+    // FIFO: Delete oldest handoff if at capacity (for new keys only)
+    const isNewKey = !this.handoffs.has(input.key);
+    if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
+      this.deleteOldestHandoff();
+    }
+
     const validation = validateHandoff(
       input.key,
       input.title,
@@ -211,8 +244,24 @@ export class LocalStorage implements Storage {
 // Remote HTTP Storage Client
 // =============================================================================
 
+/**
+ * Attempt to reconnect to a server (discover or start new one)
+ * This bypasses the cache for retry purposes
+ */
+async function attemptReconnect(): Promise<string | null> {
+  const result = await autoConnect();
+  if (result.serverUrl) {
+    // Update the cache for future getStorage() calls
+    cachedAutoConnectResult = result;
+    return result.serverUrl;
+  }
+  return null;
+}
+
 export class RemoteStorage implements Storage {
   private serverUrl: string;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectAttempts: number;
 
   constructor(serverUrl: string) {
     // Validate URL scheme (only http/https allowed)
@@ -222,12 +271,32 @@ export class RemoteStorage implements Storage {
 
     // Remove trailing slash if present
     this.serverUrl = serverUrl.replace(/\/$/, "");
+    this.maxReconnectAttempts = connectionConfig.retryCount;
+  }
+
+  /**
+   * Attempt to reconnect to a server and update the URL
+   * Returns true if reconnection was successful
+   */
+  private async tryReconnect(): Promise<boolean> {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      return false;
+    }
+    this.reconnectAttempts++;
+
+    const newUrl = await attemptReconnect();
+    if (newUrl) {
+      this.serverUrl = newUrl.replace(/\/$/, "");
+      return true;
+    }
+    return false;
   }
 
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    saveInput?: SaveInput
   ): Promise<StorageResult<T>> {
     const url = `${this.serverUrl}${path}`;
 
@@ -239,9 +308,30 @@ export class RemoteStorage implements Storage {
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (error) {
+      // Connection failed - attempt reconnect and retry
+      const reconnected = await this.tryReconnect();
+      if (reconnected) {
+        // Retry the request with new server URL
+        return this.request(method, path, body, saveInput);
+      }
+
       const message = error instanceof Error ? error.message : "Unknown error";
-      return { success: false, error: `Failed to connect to server: ${message}` };
+      const result: StorageResult<T> = {
+        success: false,
+        error: `Failed to connect to server: ${message}`,
+        suggestion: "Would you like to output the handoff content for manual recovery?",
+      };
+
+      // Include pending content for save operations
+      if (saveInput) {
+        result.pendingContent = saveInput;
+      }
+
+      return result;
     }
+
+    // Reset reconnect attempts on successful connection
+    this.reconnectAttempts = 0;
 
     // Parse JSON response safely
     let data: { error?: string } & T;
@@ -262,7 +352,7 @@ export class RemoteStorage implements Storage {
   }
 
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {
-    return this.request("POST", "/handoff", input);
+    return this.request("POST", "/handoff", input, input);
   }
 
   async list(): Promise<StorageResult<HandoffSummary[]>> {
@@ -287,25 +377,6 @@ export class RemoteStorage implements Storage {
 }
 
 // =============================================================================
-// Health Check
-// =============================================================================
-
-const DEFAULT_SERVER = "http://localhost:1099";
-const HEALTH_CHECK_TIMEOUT_MS = 500; // Short timeout for per-request checks
-
-async function checkServerHealth(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${url}/`, {
-      method: "GET",
-      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-// =============================================================================
 // Dynamic Storage Provider
 // =============================================================================
 
@@ -315,6 +386,7 @@ export interface GetStorageResult {
   storage: Storage;
   mode: StorageMode;
   serverUrl?: string;
+  autoStarted?: boolean;
 }
 
 // Singleton local storage instance (preserves data across mode switches)
@@ -327,22 +399,26 @@ function getLocalStorage(): LocalStorage {
   return localStorageInstance;
 }
 
-// Track previous mode for warning deduplication
+// Track previous mode for logging deduplication
 let previousMode: StorageMode | null = null;
 let previousServerUrl: string | null = null;
 
+// Cached auto-connect result (avoid repeated server startup attempts)
+let cachedAutoConnectResult: AutoConnectResult | null = null;
+let autoConnectInitialized = false;
+
 /**
  * Get storage dynamically based on server availability.
+ * In v0.4.0+, server auto-start is the default behavior.
  * Called on each request to enable dynamic mode switching.
  */
 export async function getStorage(): Promise<GetStorageResult> {
   const serverEnv = process.env.HANDOFF_SERVER;
 
-  // Explicit standalone mode (no warning, no health check)
+  // Explicit standalone mode (no warning, no health check, no auto-start)
   if (serverEnv === "none") {
     const mode: StorageMode = "standalone-explicit";
     if (previousMode !== mode) {
-      console.error("[conversation-handoff] Standalone mode (explicit)");
       previousMode = mode;
       previousServerUrl = null;
     }
@@ -352,45 +428,42 @@ export async function getStorage(): Promise<GetStorageResult> {
     };
   }
 
-  // Determine target server URL
-  const targetUrl = serverEnv || DEFAULT_SERVER;
-
-  // Check server availability
-  const isAvailable = await checkServerHealth(targetUrl);
-
-  if (isAvailable) {
-    const mode: StorageMode = "shared";
-    // Log only on mode change or server URL change
-    if (previousMode !== mode || previousServerUrl !== targetUrl) {
-      console.error(`[conversation-handoff] Shared mode: ${targetUrl}`);
-      previousMode = mode;
-      previousServerUrl = targetUrl;
-    }
+  // If explicit server URL is provided, use it directly
+  if (serverEnv && serverEnv !== "none") {
     return {
-      storage: new RemoteStorage(targetUrl),
-      mode,
-      serverUrl: targetUrl,
+      storage: new RemoteStorage(serverEnv),
+      mode: "shared",
+      serverUrl: serverEnv,
     };
   }
 
-  // Fallback to standalone with warning (only on mode change)
-  const mode: StorageMode = "standalone";
-  if (previousMode !== mode || previousServerUrl !== targetUrl) {
-    const isDefault = !serverEnv;
-    if (isDefault) {
-      console.warn(
-        `[conversation-handoff] Shared server (${targetUrl}) not available. Running in standalone mode.`
-      );
-      console.warn(
-        "[conversation-handoff] To share handoffs, start a server: npx conversation-handoff-mcp --serve"
-      );
-    } else {
-      console.warn(
-        `[conversation-handoff] Cannot connect to server (${targetUrl}). Falling back to standalone mode.`
-      );
+  // Auto-connect: discover or start server (only once per process)
+  if (!autoConnectInitialized) {
+    cachedAutoConnectResult = await autoConnect();
+    autoConnectInitialized = true;
+  }
+
+  const autoResult = cachedAutoConnectResult;
+
+  if (autoResult?.serverUrl) {
+    const mode: StorageMode = "shared";
+    if (previousMode !== mode || previousServerUrl !== autoResult.serverUrl) {
+      previousMode = mode;
+      previousServerUrl = autoResult.serverUrl;
     }
+    return {
+      storage: new RemoteStorage(autoResult.serverUrl),
+      mode,
+      serverUrl: autoResult.serverUrl,
+      autoStarted: autoResult.autoStarted,
+    };
+  }
+
+  // Fallback to standalone (silently, no warnings in v0.4.0+)
+  const mode: StorageMode = "standalone";
+  if (previousMode !== mode) {
     previousMode = mode;
-    previousServerUrl = targetUrl;
+    previousServerUrl = null;
   }
 
   return {
@@ -399,9 +472,20 @@ export async function getStorage(): Promise<GetStorageResult> {
   };
 }
 
+/**
+ * Force retry auto-connect (useful after connection failures)
+ */
+export async function retryAutoConnect(): Promise<GetStorageResult> {
+  cachedAutoConnectResult = null;
+  autoConnectInitialized = false;
+  return getStorage();
+}
+
 // For testing: reset internal state
 export function resetStorageState(): void {
   localStorageInstance = null;
   previousMode = null;
   previousServerUrl = null;
+  cachedAutoConnectResult = null;
+  autoConnectInitialized = false;
 }

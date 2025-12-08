@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-12-08
+
+### Added
+
+- **Auto-Connect Feature**: Server automatically starts and connects without user intervention
+  - Automatic server discovery via parallel port scanning (1099-1200, 102 ports)
+  - Background server auto-start when no server is running
+- **Auto-Reconnection**: Automatic reconnection when server goes down during operation
+  - On request failure, automatically rescans ports and restarts server if needed
+  - Transparent retry - user sees no errors during reconnection
+  - Configurable retry limit via `HANDOFF_RETRY_COUNT` (default: 30)
+  - On final failure: outputs pending content for manual recovery
+- **Server Auto-Shutdown (TTL)**: Server automatically stops after inactivity
+  - Default: 24 hours of no requests
+  - Configurable via `HANDOFF_SERVER_TTL` (0 = disabled)
+- **Auto-Generated Keys/Titles**: `key` and `title` are now optional in `handoff_save`
+  - Auto-generated key format: `handoff-YYYYMMDDHHMMSS-random`
+  - Auto-generated title: First 50 characters of summary
+- **New Environment Variables**:
+  - `HANDOFF_PORT_RANGE`: Port scan range (default: 1099-1200)
+  - `HANDOFF_RETRY_COUNT`: Reconnection retry count (default: 30)
+  - `HANDOFF_RETRY_INTERVAL`: Reconnection interval in ms (default: 10000)
+  - `HANDOFF_SERVER_TTL`: Server auto-shutdown after inactivity (default: 24 hours, 0 = disabled)
+- New `autoconnect.ts` module for connection management
+
+### Changed
+
+- **Breaking**: Default behavior changed from standalone to auto-server mode
+  - Use `HANDOFF_SERVER=none` to force standalone mode (no server startup)
+- Server auto-selects available port if default (1099) is in use
+- Removed warning messages for cleaner user experience
+- Updated help text with new configuration options
+
+### Design Philosophy
+
+- **Memory-Based Storage**: Handoff data is intentionally stored in memory only
+  - No files are written to disk - lightweight temporary clipboard design
+  - Data is shared across MCP clients via HTTP server
+  - Data is lost when server stops - perfect for session-based context sharing
+- **FIFO Auto-Cleanup**: When storage limit is reached, oldest handoff is automatically deleted
+  - No error returned to user - seamless experience
+  - Updating existing keys doesn't trigger deletion
+
+### Removed
+
+- Standalone mode warnings (silent fallback in v0.4.0+)
+- Per-request server health checks (replaced by cached auto-connect)
+
 ## [0.3.1] - 2025-12-06
 
 ### Security
