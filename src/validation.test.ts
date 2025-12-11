@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type Config,
   formatBytes,
+  splitConversationMessages,
   validateConversation,
   validateHandoff,
   validateKey,
@@ -147,5 +148,85 @@ describe("formatBytes", () => {
 
   it("should format gigabytes", () => {
     expect(formatBytes(1073741824)).toBe("1 GB");
+  });
+});
+
+describe("splitConversationMessages", () => {
+  it("should split ## User / ## Assistant format (recommended)", () => {
+    const conversation = "## User\nHello\n\n## Assistant\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+    expect(messages[0]).toContain("User");
+    expect(messages[1]).toContain("Assistant");
+  });
+
+  it("should split # User / # Assistant format (H1)", () => {
+    const conversation = "# User\nHello\n\n# Assistant\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should split ### User / ### Assistant format (H3)", () => {
+    const conversation = "### User\nHello\n\n### Assistant\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should split **User:** / **Assistant:** format (bold)", () => {
+    const conversation = "**User:**\nHello\n\n**Assistant:**\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should split User: / Assistant: format (simple colon)", () => {
+    const conversation = "User:\nHello\n\nAssistant:\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should split Human: / Claude: format (alternative names)", () => {
+    const conversation = "Human:\nHello\n\nClaude:\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should split Human: / AI: format", () => {
+    const conversation = "Human:\nHello\n\nAI:\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
+  });
+
+  it("should handle multiple messages", () => {
+    const conversation = `## User
+First question
+
+## Assistant
+First answer
+
+## User
+Second question
+
+## Assistant
+Second answer`;
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(4);
+  });
+
+  it("should return whole conversation if no delimiters found", () => {
+    const conversation = "Just some plain text without any message delimiters.";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(1);
+    expect(messages[0]).toBe(conversation);
+  });
+
+  it("should handle empty string", () => {
+    const messages = splitConversationMessages("");
+    expect(messages.length).toBe(1);
+  });
+
+  it("should be case-insensitive for role names", () => {
+    const conversation = "## user\nHello\n\n## assistant\nHi there!";
+    const messages = splitConversationMessages(conversation);
+    expect(messages.length).toBe(2);
   });
 });

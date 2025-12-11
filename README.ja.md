@@ -19,23 +19,6 @@ AIチャット間、または同AIの異なるプロジェクト間で会話コ�
 
 ## インストール
 
-### npm経由（推奨）
-
-```bash
-npm install -g conversation-handoff-mcp
-```
-
-### ローカルビルド
-
-```bash
-git clone https://github.com/trust-delta/conversation-handoff-mcp.git
-cd conversation-handoff-mcp
-npm install
-npm run build
-```
-
-## MCP クライアント設定
-
 Claude Desktop、Claude Code、Codex CLI、Gemini CLI など各種MCPクライアントで使用できます。
 
 ### 設定ファイルの場所
@@ -50,7 +33,9 @@ Claude Desktop、Claude Code、Codex CLI、Gemini CLI など各種MCPクライ�
 | Cursor | `~/.cursor/mcp.json` |
 | ChatGPT Desktop | アプリ内設定（Developer Mode） |
 
-### npx経由（インストール不要）
+### npm経由（推奨）
+
+npxで実行するため、事前インストールは不要です。
 
 ```json
 {
@@ -63,7 +48,22 @@ Claude Desktop、Claude Code、Codex CLI、Gemini CLI など各種MCPクライ�
 }
 ```
 
-### ローカルビルド版を使用
+グローバルインストールする場合：
+
+```bash
+npm install -g conversation-handoff-mcp
+```
+
+### ローカルビルド
+
+```bash
+git clone https://github.com/trust-delta/conversation-handoff-mcp.git
+cd conversation-handoff-mcp
+npm install
+npm run build
+```
+
+MCP設定：
 
 ```json
 {
@@ -238,6 +238,8 @@ handoffデータは**メモリのみ**に保存されます：
 ```
 
 **スタンドアロンモードを強制（サーバーなし）：**
+
+Claude Desktop専用です。Claude Desktopは標準機能では異なるプロジェクト間で会話を引き継げませんが、単一アプリとしてメモリ空間を共有するため、このMCPサーバーで引き継ぎが可能になります。Claude CodeやCLIツールは各タブ/セッションが独立プロセスのため、このモードでは引き継ぎできません。
 
 ```json
 {

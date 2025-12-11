@@ -144,12 +144,53 @@ export function validateHandoff(
 // Utilities
 // =============================================================================
 
+/**
+ * Sleep for specified milliseconds.
+ * @param ms - Milliseconds to sleep
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * Common conversation delimiter patterns for splitting messages.
+ * Supports various formats that AIs might use:
+ * - ## User / ## Assistant (Markdown H2) - recommended
+ * - # User / # Assistant (Markdown H1)
+ * - ### User / ### Assistant (Markdown H3)
+ * - **User:** / **Assistant:** (Bold with colon)
+ * - User: / Assistant: (Simple colon format)
+ * Also supports alternative role names: Human, Claude, AI
+ */
+const MESSAGE_DELIMITER =
+  /(?=(?:^|\n)(?:#{1,3}\s+|\*\*)?(?:User|Assistant|Human|Claude|AI)(?:\*\*)?(?::|(?=\s*\n)))/gi;
+
+/**
+ * Split a conversation string into individual messages.
+ * Handles various common formats used by different AIs.
+ * @param conversation - The conversation text to split
+ * @returns Array of message strings
+ */
+export function splitConversationMessages(conversation: string): string[] {
+  // Reset regex state (global flag)
+  MESSAGE_DELIMITER.lastIndex = 0;
+
+  const messages = conversation.split(MESSAGE_DELIMITER).filter((msg) => msg.trim().length > 0);
+
+  // If no delimiters found, return the whole conversation as one message
+  if (messages.length === 0) {
+    return [conversation];
+  }
+
+  return messages;
 }
 
 // =============================================================================

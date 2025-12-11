@@ -530,11 +530,9 @@ describe("getStorage", () => {
   });
 
   it("should preserve local storage data in standalone mode", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
-    delete process.env.HANDOFF_SERVER;
-
-    // Start in standalone mode
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    // Use explicit standalone mode to avoid auto-connect overhead in tests
+    // (auto-connect fallback to standalone is already tested above)
+    process.env.HANDOFF_SERVER = "none";
 
     const result1 = await getStorage();
     await result1.storage.save({

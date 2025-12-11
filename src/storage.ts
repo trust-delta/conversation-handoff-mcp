@@ -1,5 +1,12 @@
 import { type AutoConnectResult, autoConnect } from "./autoconnect.js";
-import { connectionConfig, defaultConfig, formatBytes, validateHandoff } from "./validation.js";
+import {
+  connectionConfig,
+  defaultConfig,
+  formatBytes,
+  sleep,
+  splitConversationMessages,
+  validateHandoff,
+} from "./validation.js";
 import type { Config } from "./validation.js";
 
 // =============================================================================
@@ -194,7 +201,7 @@ export class LocalStorage implements Storage {
 
     // Apply message truncation if requested
     if (maxMessages && maxMessages > 0) {
-      const messages = handoff.conversation.split(/(?=## (?:User|Assistant))/);
+      const messages = splitConversationMessages(handoff.conversation);
       if (messages.length > maxMessages) {
         const truncatedConversation = messages.slice(-maxMessages).join("");
         return {
@@ -337,7 +344,7 @@ export class RemoteStorage implements Storage {
 
     // Apply delay before retry (except for first attempt)
     if (this.reconnectAttempts > 0) {
-      await this.sleep(connectionConfig.retryIntervalMs);
+      await sleep(connectionConfig.retryIntervalMs);
     }
 
     this.reconnectAttempts++;
@@ -348,14 +355,6 @@ export class RemoteStorage implements Storage {
       return true;
     }
     return false;
-  }
-
-  /**
-   * Sleep for specified milliseconds.
-   * @param ms - Milliseconds to sleep
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

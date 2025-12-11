@@ -1,8 +1,18 @@
+import { readFileSync } from "node:fs";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import type { Server } from "node:http";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { findAvailablePort } from "./autoconnect.js";
 import { LocalStorage, type SaveInput } from "./storage.js";
 import { connectionConfig, defaultConfig } from "./validation.js";
+
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as {
+  version: string;
+};
+const VERSION = packageJson.version;
 
 // =============================================================================
 // Constants
@@ -276,6 +286,7 @@ export class HttpServer {
       if (method === "GET" && path === "/") {
         this.sendJson(res, 200, {
           name: "conversation-handoff-server",
+          version: VERSION,
           status: "running",
           port: this.port,
         });

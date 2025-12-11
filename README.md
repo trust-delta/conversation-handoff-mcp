@@ -19,23 +19,6 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Installation
 
-### Via npm (Recommended)
-
-```bash
-npm install -g conversation-handoff-mcp
-```
-
-### Local Build
-
-```bash
-git clone https://github.com/trust-delta/conversation-handoff-mcp.git
-cd conversation-handoff-mcp
-npm install
-npm run build
-```
-
-## MCP Client Configuration
-
 Works with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, and other MCP clients.
 
 ### Configuration File Locations
@@ -50,7 +33,9 @@ Works with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, and other MCP cli
 | Cursor | `~/.cursor/mcp.json` |
 | ChatGPT Desktop | In-app settings (Developer Mode) |
 
-### Via npx (No Installation Required)
+### Via npm (Recommended)
+
+No pre-installation required - runs via npx.
 
 ```json
 {
@@ -63,7 +48,22 @@ Works with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, and other MCP cli
 }
 ```
 
-### Using Local Build
+For global installation:
+
+```bash
+npm install -g conversation-handoff-mcp
+```
+
+### Local Build
+
+```bash
+git clone https://github.com/trust-delta/conversation-handoff-mcp.git
+cd conversation-handoff-mcp
+npm install
+npm run build
+```
+
+MCP configuration:
 
 ```json
 {
@@ -237,6 +237,8 @@ The server automatically shuts down after a period of inactivity:
 ```
 
 **Force standalone mode (no server):**
+
+For Claude Desktop only. Claude Desktop cannot transfer conversations between projects by default, but since it shares memory space as a single app, this MCP server enables handoffs between projects. Claude Code and CLI tools run as separate processes per tab/session, so handoffs don't work in this mode.
 
 ```json
 {

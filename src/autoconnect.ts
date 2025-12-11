@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type PortRange, connectionConfig } from "./validation.js";
+import { type PortRange, connectionConfig, sleep } from "./validation.js";
 
 // =============================================================================
 // Types
@@ -209,14 +209,6 @@ export async function autoConnect(): Promise<AutoConnectResult> {
 // =============================================================================
 // Utilities
 // =============================================================================
-
-/**
- * Sleep for specified milliseconds.
- * @param ms - Milliseconds to sleep
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Generate a unique handoff key with timestamp and random suffix.

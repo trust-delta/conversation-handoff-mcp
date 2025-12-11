@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-12-11
+
+### Added
+
+- **Flexible Conversation Parsing**: `max_messages` truncation now supports multiple message formats
+  - Markdown headers: `## User`, `# User`, `### User`
+  - Bold format: `**User:**`, `**Assistant:**`
+  - Simple colon: `User:`, `Assistant:`
+  - Alternative role names: `Human`, `Claude`, `AI`
+  - Case-insensitive matching
+- Health check endpoint now includes `version` field in response
+- New `splitConversationMessages()` utility function with 11 unit tests
+
+### Changed
+
+- Extracted `sleep()` function to shared utilities (reduced code duplication)
+
+### Fixed
+
+- Test timeout issue in `getStorage` tests (use explicit standalone mode to avoid auto-connect overhead)
+
 ## [0.4.0] - 2025-12-08
 
 ### Added
