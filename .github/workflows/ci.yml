@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Security audit
+        run: npm audit --omit=dev --audit-level=moderate
+
       - name: Lint & Format check
         run: npm run check
 

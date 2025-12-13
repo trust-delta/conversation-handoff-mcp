@@ -1,6 +1,6 @@
 {
   "name": "conversation-handoff-mcp",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "bin": {
     "conversation-handoff-mcp": "./dist/index.js"
   },
@@ -11,6 +11,12 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "clean": "rimraf dist",
