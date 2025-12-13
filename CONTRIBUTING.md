@@ -29,12 +29,14 @@ npm run build
 2. Create a feature branch from `develop`
 3. Make your changes
 4. Ensure all checks pass:
+
    ```bash
    npm run check
    npm run typecheck
    npm run test
    npm run build
    ```
+
 5. Submit a PR to the `develop` branch
 
 ## Code Style
