@@ -4,6 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml)
 
+<a href="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp/badge" />
+</a>
+
 MCP server for transferring conversation context between AI chats or different projects within the same AI.
 
 [日本語ドキュメント](README.ja.md)
