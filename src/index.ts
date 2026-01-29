@@ -2,8 +2,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RESOURCE_MIME_TYPE,
+  registerAppResource,
+  registerAppTool,
+} from "@modelcontextprotocol/ext-apps/server";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import cors from "cors";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
@@ -22,6 +31,7 @@ const VERSION = packageJson.version;
 
 interface CliArgs {
   serve: boolean;
+  mcpHttp: boolean;
   port: number;
   help: boolean;
 }
@@ -30,6 +40,7 @@ function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const result: CliArgs = {
     serve: false,
+    mcpHttp: false,
     port: DEFAULT_PORT,
     help: false,
   };
@@ -38,6 +49,8 @@ function parseArgs(): CliArgs {
     const arg = args[i];
     if (arg === "--serve" || arg === "-s") {
       result.serve = true;
+    } else if (arg === "--mcp-http") {
+      result.mcpHttp = true;
     } else if (arg === "--port" || arg === "-p") {
       const portArg = args[++i];
       if (portArg) {
@@ -66,6 +79,7 @@ Usage:
 
 Options:
   --serve, -s     Start as HTTP server (shared mode)
+  --mcp-http      Start as MCP server over HTTP (for MCP Apps UI)
   --port, -p      HTTP server port (default: ${DEFAULT_PORT})
   --help, -h      Show this help message
 
@@ -87,6 +101,12 @@ Modes:
     Runs as a shared HTTP server explicitly. Useful for manual server management.
 
     npx conversation-handoff-mcp --serve
+
+  MCP HTTP Mode (--mcp-http):
+    Runs as an MCP server over HTTP with MCP Apps UI support.
+    Provides interactive handoff viewer UI in compatible clients.
+
+    npx conversation-handoff-mcp --mcp-http --port 3001
 
   Standalone Mode:
     To disable auto-server and run in standalone mode:
@@ -374,6 +394,81 @@ ${handoff.conversation}`,
 }
 
 // =============================================================================
+// MCP Apps Registration
+// =============================================================================
+
+const VIEWER_RESOURCE_URI = "ui://handoff/viewer.html";
+
+function loadViewerHtml(): string {
+  try {
+    return readFileSync(join(__dirname, "..", "dist", "ui", "viewer.html"), "utf-8");
+  } catch {
+    // Fallback minimal HTML if viewer not built
+    return `<!DOCTYPE html><html><head><title>Handoff Viewer</title></head>
+<body style="background:#1a1a2e;color:#e8e8e8;font-family:system-ui;padding:20px;">
+<h1>Handoff Viewer</h1>
+<p>UI not available. Build with: npm run build:ui</p>
+</body></html>`;
+  }
+}
+
+function registerApps(server: McpServer): void {
+  const viewerHtml = loadViewerHtml();
+
+  // Register handoff_viewer tool with UI
+  registerAppTool(
+    server,
+    "handoff_viewer",
+    {
+      description:
+        "Open interactive handoff viewer UI to browse and view saved conversation handoffs.",
+      _meta: {
+        ui: {
+          resourceUri: VIEWER_RESOURCE_URI,
+        },
+      },
+    },
+    async () => {
+      const { storage } = await getStorage();
+      const result = await storage.list();
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: `Error: ${result.error}` }],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result.data || [], null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Register UI resource
+  registerAppResource(
+    server,
+    VIEWER_RESOURCE_URI,
+    VIEWER_RESOURCE_URI,
+    { mimeType: RESOURCE_MIME_TYPE },
+    () =>
+      Promise.resolve({
+        contents: [
+          {
+            uri: VIEWER_RESOURCE_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: viewerHtml,
+          },
+        ],
+      })
+  );
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -385,19 +480,26 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Server mode
+  // Server mode (REST API)
   if (args.serve) {
     await startServer(args.port);
     return;
   }
 
-  // MCP mode
+  // MCP HTTP mode (with MCP Apps UI)
+  if (args.mcpHttp) {
+    await startMcpHttpServer(args.port);
+    return;
+  }
+
+  // MCP stdio mode (default)
   const server = new McpServer({
     name: "conversation-handoff",
     version: VERSION,
   });
 
   registerTools(server);
+  registerApps(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -407,6 +509,63 @@ async function main(): Promise<void> {
   await getStorage();
 
   console.error("Conversation Handoff MCP server running on stdio");
+}
+
+/**
+ * Create a new MCP server instance with tools and apps registered.
+ */
+function createMcpServer(): McpServer {
+  const server = new McpServer({
+    name: "conversation-handoff",
+    version: VERSION,
+  });
+  registerTools(server);
+  registerApps(server);
+  return server;
+}
+
+/**
+ * Start MCP server over HTTP with MCP Apps UI support.
+ * Uses stateless mode: creates new server instance per request.
+ */
+async function startMcpHttpServer(port: number): Promise<void> {
+  const app = createMcpExpressApp({ host: "0.0.0.0" });
+  app.use(cors());
+
+  app.all("/mcp", async (req: Request, res: Response) => {
+    const server = createMcpServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+
+    res.on("close", () => {
+      transport.close().catch(() => {});
+      server.close().catch(() => {});
+    });
+
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("MCP error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
+  });
+
+  app.listen(port, () => {
+    console.log(`Conversation Handoff MCP server (HTTP) running on http://0.0.0.0:${port}/mcp`);
+    console.log("");
+    console.log("Use with MCP Apps-compatible clients for interactive handoff viewer.");
+  });
+
+  // Initialize storage
+  await getStorage();
 }
 
 main().catch(console.error);
