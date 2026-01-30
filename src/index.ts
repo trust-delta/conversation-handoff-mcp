@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -7,12 +8,9 @@ import {
   registerAppResource,
   registerAppTool,
 } from "@modelcontextprotocol/ext-apps/server";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import cors from "cors";
-import type { Request, Response } from "express";
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
@@ -25,13 +23,15 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"
 };
 const VERSION = packageJson.version;
 
+// MCP Apps UI resource URI
+const VIEWER_RESOURCE_URI = "ui://conversation-handoff/viewer.html";
+
 // =============================================================================
 // CLI Arguments
 // =============================================================================
 
 interface CliArgs {
   serve: boolean;
-  mcpHttp: boolean;
   port: number;
   help: boolean;
 }
@@ -40,7 +40,6 @@ function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const result: CliArgs = {
     serve: false,
-    mcpHttp: false,
     port: DEFAULT_PORT,
     help: false,
   };
@@ -49,8 +48,6 @@ function parseArgs(): CliArgs {
     const arg = args[i];
     if (arg === "--serve" || arg === "-s") {
       result.serve = true;
-    } else if (arg === "--mcp-http") {
-      result.mcpHttp = true;
     } else if (arg === "--port" || arg === "-p") {
       const portArg = args[++i];
       if (portArg) {
@@ -79,7 +76,6 @@ Usage:
 
 Options:
   --serve, -s     Start as HTTP server (shared mode)
-  --mcp-http      Start as MCP server over HTTP (for MCP Apps UI)
   --port, -p      HTTP server port (default: ${DEFAULT_PORT})
   --help, -h      Show this help message
 
@@ -101,12 +97,6 @@ Modes:
     Runs as a shared HTTP server explicitly. Useful for manual server management.
 
     npx conversation-handoff-mcp --serve
-
-  MCP HTTP Mode (--mcp-http):
-    Runs as an MCP server over HTTP with MCP Apps UI support.
-    Provides interactive handoff viewer UI in compatible clients.
-
-    npx conversation-handoff-mcp --mcp-http --port 3001
 
   Standalone Mode:
     To disable auto-server and run in standalone mode:
@@ -143,36 +133,34 @@ Note: Data is stored in memory only. Handoffs are lost when the server stops.
 // MCP Server Setup
 // =============================================================================
 
+/**
+ * Register all MCP tools
+ */
 function registerTools(server: McpServer): void {
   // handoff_save
-  server.registerTool(
+  server.tool(
     "handoff_save",
+    "Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.",
     {
-      description:
-        "Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.",
-      inputSchema: {
-        key: z
-          .string()
-          .optional()
-          .describe(
-            "Unique identifier for this handoff (e.g., 'project-design-2024'). Auto-generated if omitted."
-          ),
-        title: z
-          .string()
-          .optional()
-          .describe(
-            "Human-readable title for the handoff. Auto-generated from summary if omitted."
-          ),
-        summary: z.string().describe("Brief summary of the conversation context"),
-        conversation: z
-          .string()
-          .describe("Full conversation in Markdown format (## User / ## Assistant)"),
-        from_ai: z
-          .string()
-          .default("claude")
-          .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
-        from_project: z.string().default("").describe("Name of the source project (optional)"),
-      },
+      key: z
+        .string()
+        .optional()
+        .describe(
+          "Unique identifier for this handoff (e.g., 'project-design-2024'). Auto-generated if omitted."
+        ),
+      title: z
+        .string()
+        .optional()
+        .describe("Human-readable title for the handoff. Auto-generated from summary if omitted."),
+      summary: z.string().describe("Brief summary of the conversation context"),
+      conversation: z
+        .string()
+        .describe("Full conversation in Markdown format (## User / ## Assistant)"),
+      from_ai: z
+        .string()
+        .default("claude")
+        .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
+      from_project: z.string().default("").describe("Name of the source project (optional)"),
     },
     async ({ key, title, summary, conversation, from_ai, from_project }) => {
       // Auto-generate key and title if not provided
@@ -227,12 +215,10 @@ function registerTools(server: McpServer): void {
   );
 
   // handoff_list
-  server.registerTool(
+  server.tool(
     "handoff_list",
-    {
-      description:
-        "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content.",
-    },
+    "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content.",
+    {},
     async () => {
       const { storage } = await getStorage();
       const result = await storage.list();
@@ -271,17 +257,12 @@ function registerTools(server: McpServer): void {
   );
 
   // handoff_load
-  server.registerTool(
+  server.tool(
     "handoff_load",
+    "Load a specific handoff by key. Returns full conversation content.",
     {
-      description: "Load a specific handoff by key. Returns full conversation content.",
-      inputSchema: {
-        key: z.string().describe("The key of the handoff to load"),
-        max_messages: z
-          .number()
-          .optional()
-          .describe("Optional: limit number of messages to return"),
-      },
+      key: z.string().describe("The key of the handoff to load"),
+      max_messages: z.number().optional().describe("Optional: limit number of messages to return"),
     },
     async ({ key, max_messages }) => {
       const { storage } = await getStorage();
@@ -321,14 +302,11 @@ ${handoff.conversation}`,
   );
 
   // handoff_clear
-  server.registerTool(
+  server.tool(
     "handoff_clear",
+    "Clear handoffs. If key is provided, clears only that handoff. Otherwise clears all.",
     {
-      description:
-        "Clear handoffs. If key is provided, clears only that handoff. Otherwise clears all.",
-      inputSchema: {
-        key: z.string().optional().describe("Optional: specific handoff key to clear"),
-      },
+      key: z.string().optional().describe("Optional: specific handoff key to clear"),
     },
     async ({ key }) => {
       const { storage } = await getStorage();
@@ -361,11 +339,10 @@ ${handoff.conversation}`,
   );
 
   // handoff_stats
-  server.registerTool(
+  server.tool(
     "handoff_stats",
-    {
-      description: "Get storage statistics and current limits. Useful for monitoring usage.",
-    },
+    "Get storage statistics and current limits. Useful for monitoring usage.",
+    {},
     async () => {
       const { storage } = await getStorage();
       const result = await storage.stats();
@@ -393,78 +370,68 @@ ${handoff.conversation}`,
   );
 }
 
-// =============================================================================
-// MCP Apps Registration
-// =============================================================================
-
-const VIEWER_RESOURCE_URI = "ui://handoff/viewer.html";
-
-function loadViewerHtml(): string {
-  try {
-    return readFileSync(join(__dirname, "..", "dist", "ui", "viewer.html"), "utf-8");
-  } catch {
-    // Fallback minimal HTML if viewer not built
-    return `<!DOCTYPE html><html><head><title>Handoff Viewer</title></head>
-<body style="background:#1a1a2e;color:#e8e8e8;font-family:system-ui;padding:20px;">
-<h1>Handoff Viewer</h1>
-<p>UI not available. Build with: npm run build:ui</p>
-</body></html>`;
-  }
-}
-
-function registerApps(server: McpServer): void {
-  const viewerHtml = loadViewerHtml();
-
-  // Register handoff_viewer tool with UI
+/**
+ * Register MCP Apps UI tools and resources
+ */
+function registerAppUI(server: McpServer): void {
+  // Handoff Viewer ツール
   registerAppTool(
     server,
     "handoff_viewer",
     {
-      description:
-        "Open interactive handoff viewer UI to browse and view saved conversation handoffs.",
-      _meta: {
-        ui: {
-          resourceUri: VIEWER_RESOURCE_URI,
-        },
+      title: "Handoff Viewer",
+      description: "Open the Handoff Viewer UI to browse and view saved handoffs.",
+      inputSchema: {
+        action: z.string().default("open").describe("Action"),
       },
+      outputSchema: z.object({
+        status: z.string().describe("Status"),
+        handoffs: z
+          .array(
+            z.object({
+              key: z.string(),
+              title: z.string(),
+              from_ai: z.string(),
+              created_at: z.string(),
+            })
+          )
+          .optional()
+          .describe("List of handoffs"),
+      }),
+      _meta: { ui: { resourceUri: VIEWER_RESOURCE_URI } },
     },
-    async () => {
+    async (): Promise<CallToolResult> => {
+      // Get handoffs list to pass to UI
       const { storage } = await getStorage();
       const result = await storage.list();
 
-      if (!result.success) {
-        return {
-          content: [{ type: "text", text: `Error: ${result.error}` }],
-        };
-      }
+      const handoffs = result.success && result.data ? result.data : [];
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result.data || [], null, 2),
-          },
-        ],
+        content: [{ type: "text", text: "Handoff Viewer opened" }],
+        structuredContent: {
+          status: "opened",
+          handoffs: handoffs,
+        },
       };
     }
   );
 
-  // Register UI resource
+  // Handoff Viewer UI リソース
   registerAppResource(
     server,
     VIEWER_RESOURCE_URI,
     VIEWER_RESOURCE_URI,
     { mimeType: RESOURCE_MIME_TYPE },
-    () =>
-      Promise.resolve({
-        contents: [
-          {
-            uri: VIEWER_RESOURCE_URI,
-            mimeType: RESOURCE_MIME_TYPE,
-            text: viewerHtml,
-          },
-        ],
-      })
+    async (): Promise<ReadResourceResult> => {
+      const html = await fs.readFile(
+        join(__dirname, "..", "dist", "ui", "viewer-simple.html"),
+        "utf-8"
+      );
+      return {
+        contents: [{ uri: VIEWER_RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+      };
+    }
   );
 }
 
@@ -480,26 +447,20 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Server mode (REST API)
+  // Server mode
   if (args.serve) {
     await startServer(args.port);
     return;
   }
 
-  // MCP HTTP mode (with MCP Apps UI)
-  if (args.mcpHttp) {
-    await startMcpHttpServer(args.port);
-    return;
-  }
-
-  // MCP stdio mode (default)
+  // MCP mode
   const server = new McpServer({
     name: "conversation-handoff",
     version: VERSION,
   });
 
   registerTools(server);
-  registerApps(server);
+  registerAppUI(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -509,63 +470,6 @@ async function main(): Promise<void> {
   await getStorage();
 
   console.error("Conversation Handoff MCP server running on stdio");
-}
-
-/**
- * Create a new MCP server instance with tools and apps registered.
- */
-function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "conversation-handoff",
-    version: VERSION,
-  });
-  registerTools(server);
-  registerApps(server);
-  return server;
-}
-
-/**
- * Start MCP server over HTTP with MCP Apps UI support.
- * Uses stateless mode: creates new server instance per request.
- */
-async function startMcpHttpServer(port: number): Promise<void> {
-  const app = createMcpExpressApp({ host: "0.0.0.0" });
-  app.use(cors());
-
-  app.all("/mcp", async (req: Request, res: Response) => {
-    const server = createMcpServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-
-    res.on("close", () => {
-      transport.close().catch(() => {});
-      server.close().catch(() => {});
-    });
-
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      console.error("MCP error:", error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: "Internal server error" },
-          id: null,
-        });
-      }
-    }
-  });
-
-  app.listen(port, () => {
-    console.log(`Conversation Handoff MCP server (HTTP) running on http://0.0.0.0:${port}/mcp`);
-    console.log("");
-    console.log("Use with MCP Apps-compatible clients for interactive handoff viewer.");
-  });
-
-  // Initialize storage
-  await getStorage();
 }
 
 main().catch(console.error);
