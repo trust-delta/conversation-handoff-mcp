@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <title>Handoff Viewer</title>
+  <title>Handoff List</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -30,14 +30,28 @@
       transition: background 0.2s;
     }
     .card:hover { background: #333; }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .card-content { flex: 1; min-width: 0; }
     .title { font-weight: 500; margin-bottom: 4px; }
     .meta { font-size: 12px; color: #888; }
     .empty { color: #666; text-align: center; padding: 32px; }
+    .btn-delete {
+      background: transparent;
+      border: 1px solid #666;
+      color: #888;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-delete:hover { border-color: #e53935; color: #e53935; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Handoff Viewer</h1>
+    <h1>Handoff List</h1>
     <span id="status">Loading...</span>
   </div>
   <div id="list"></div>

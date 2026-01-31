@@ -6,11 +6,13 @@ import { App } from "@modelcontextprotocol/ext-apps";
 interface HandoffSummary {
   key: string;
   title: string;
+  summary: string;
   from_ai: string;
+  from_project: string;
   created_at: string;
 }
 
-const app = new App({ name: "Handoff Viewer", version: "1.0.0" });
+const app = new App({ name: "Handoff List", version: "1.0.0" });
 
 // State
 let handoffs: HandoffSummary[] = [];
@@ -51,12 +53,62 @@ function renderList(): void {
     .map(
       (h) => `
       <div class="card" data-key="${escapeHtml(h.key)}">
-        <div class="title">${escapeHtml(h.title)}</div>
-        <div class="meta">${escapeHtml(h.from_ai)} | ${formatDate(h.created_at)}</div>
+        <div class="card-header">
+          <div class="card-content">
+            <div class="title">${escapeHtml(h.title)}</div>
+            <div class="meta">${escapeHtml(h.from_ai)} | ${formatDate(h.created_at)}</div>
+          </div>
+          <button class="btn-delete" data-key="${escapeHtml(h.key)}">Delete</button>
+        </div>
       </div>
     `
     )
     .join("");
+
+  // 削除ボタンのイベント登録
+  listEl.querySelectorAll(".btn-delete").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const key = (btn as HTMLElement).dataset.key;
+      if (key) deleteHandoff(key);
+    });
+  });
+}
+
+/**
+ * ハンドオフ削除
+ */
+async function deleteHandoff(key: string): Promise<void> {
+  statusEl.textContent = "Deleting...";
+  try {
+    await app.callServerTool({ name: "handoff_clear", arguments: { key } });
+    await refreshList();
+  } catch (err) {
+    statusEl.textContent = `Error: ${err}`;
+  }
+}
+
+/**
+ * リスト再取得
+ */
+async function refreshList(): Promise<void> {
+  statusEl.textContent = "Refreshing...";
+  try {
+    const result = await app.callServerTool({ name: "handoff_list", arguments: {} });
+    // structuredContentからhandoffsを取得
+    const data = (result as { structuredContent?: { handoffs?: HandoffSummary[] } })?.structuredContent;
+    if (data?.handoffs) {
+      handoffs = data.handoffs;
+      renderList();
+      statusEl.textContent = `${handoffs.length} handoffs`;
+    } else {
+      handoffs = [];
+      renderList();
+      statusEl.textContent = "No handoffs";
+    }
+  } catch (err) {
+    statusEl.textContent = `Error: ${err}`;
+  }
 }
 
 // ハンドラ登録

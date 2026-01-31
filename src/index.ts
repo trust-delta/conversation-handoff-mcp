@@ -214,44 +214,54 @@ function registerTools(server: McpServer): void {
     }
   );
 
-  // handoff_list
-  server.tool(
+  // handoff_list (with MCP Apps UI support)
+  registerAppTool(
+    server,
     "handoff_list",
-    "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content.",
-    {},
-    async () => {
+    {
+      title: "Handoff List",
+      description:
+        "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content. Opens interactive UI if supported.",
+      inputSchema: {},
+      outputSchema: z.object({
+        count: z.number().describe("Number of handoffs"),
+        handoffs: z
+          .array(
+            z.object({
+              key: z.string(),
+              title: z.string(),
+              summary: z.string(),
+              from_ai: z.string(),
+              from_project: z.string(),
+              created_at: z.string(),
+            })
+          )
+          .describe("List of handoffs"),
+      }),
+      _meta: { ui: { resourceUri: VIEWER_RESOURCE_URI } },
+    },
+    async (): Promise<CallToolResult> => {
       const { storage } = await getStorage();
       const result = await storage.list();
 
       if (!result.success) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `❌ Error: ${result.error}`,
-            },
-          ],
+          content: [{ type: "text", text: `❌ Error: ${result.error}` }],
         };
       }
 
-      if (!result.data || result.data.length === 0) {
+      const handoffs = result.data || [];
+
+      if (handoffs.length === 0) {
         return {
-          content: [
-            {
-              type: "text",
-              text: "No handoffs saved. Use handoff_save to create one.",
-            },
-          ],
+          content: [{ type: "text", text: "No handoffs saved. Use handoff_save to create one." }],
+          structuredContent: { count: 0, handoffs: [] },
         };
       }
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result.data, null, 2),
-          },
-        ],
+        content: [{ type: "text", text: JSON.stringify(handoffs, null, 2) }],
+        structuredContent: { count: handoffs.length, handoffs },
       };
     }
   );
@@ -371,52 +381,9 @@ ${handoff.conversation}`,
 }
 
 /**
- * Register MCP Apps UI tools and resources
+ * Register MCP Apps UI resources
  */
 function registerAppUI(server: McpServer): void {
-  // Handoff Viewer ツール
-  registerAppTool(
-    server,
-    "handoff_viewer",
-    {
-      title: "Handoff Viewer",
-      description: "Open the Handoff Viewer UI to browse and view saved handoffs.",
-      inputSchema: {
-        action: z.string().default("open").describe("Action"),
-      },
-      outputSchema: z.object({
-        status: z.string().describe("Status"),
-        handoffs: z
-          .array(
-            z.object({
-              key: z.string(),
-              title: z.string(),
-              from_ai: z.string(),
-              created_at: z.string(),
-            })
-          )
-          .optional()
-          .describe("List of handoffs"),
-      }),
-      _meta: { ui: { resourceUri: VIEWER_RESOURCE_URI } },
-    },
-    async (): Promise<CallToolResult> => {
-      // Get handoffs list to pass to UI
-      const { storage } = await getStorage();
-      const result = await storage.list();
-
-      const handoffs = result.success && result.data ? result.data : [];
-
-      return {
-        content: [{ type: "text", text: "Handoff Viewer opened" }],
-        structuredContent: {
-          status: "opened",
-          handoffs: handoffs,
-        },
-      };
-    }
-  );
-
   // Handoff Viewer UI リソース
   registerAppResource(
     server,
