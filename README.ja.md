@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/conversation-handoff-mcp.svg)](https://www.npmjs.com/package/conversation-handoff-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml)
+[![MCP Apps](https://img.shields.io/badge/MCP_Apps-Ready-blue.svg)](https://github.com/anthropics/mcp-apps)
 
 <a href="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp/badge" />
@@ -14,6 +15,7 @@ AIチャット間、または同AIの異なるプロジェクト間で会話コ�
 
 ## 特徴
 
+- **MCP Apps UI (v0.5.0+)**: 対応クライアントでhandoffの閲覧・管理ができるインタラクティブUI
 - **オートコネクト (v0.4.0+)**: サーバーがバックグラウンドで自動起動 - 手動設定不要
 - **自動再接続 (v0.4.0+)**: サーバーダウン時に自動復旧 - ユーザー介入不要
 - **メモリベースストレージ**: 軽量な一時クリップボード設計 - ファイルを一切使わない
@@ -139,6 +141,16 @@ handoff_clear()  // 全削除
 ```text
 handoff_stats()
 ```
+
+## MCP Apps UI (v0.5.0+)
+
+MCP Apps対応クライアントでは、`handoff_list`を呼び出すと自動的にインタラクティブUIが開きます。非対応クライアントでは従来のJSONレスポンスが返されます。
+
+### 機能
+
+- **一覧表示**: タイトル、ソースAI、日付を表示するカード形式
+- **詳細表示**: カードを展開してサマリーと会話を表示（User/Assistant形式でパース）
+- **削除**: UIから直接handoffを削除
 
 ## オートコネクトモード (v0.4.0+)
 
@@ -371,6 +383,18 @@ npx conversation-handoff-mcp --serve --port 3000
 ## Assistant
 AIの回答
 ```
+
+## セキュリティ
+
+### プロンプトインジェクション対策
+
+`handoff_load`の出力には、プロンプトインジェクション攻撃を防ぐためのセキュリティマーカーが含まれています：
+
+- **警告バナー**: コンテンツがユーザー提供であり信頼できないことをAIに通知
+- **コードブロック**: ユーザーコンテンツをコードブロックで囲み、指示として解釈されることを防止
+- **終了マーカー**: ユーザーコンテンツの終わりを明確に示す境界
+
+これにより、handoffに保存された悪意のあるコンテンツがAIの指示として解釈されることを防ぎます。
 
 ## ライセンス
 

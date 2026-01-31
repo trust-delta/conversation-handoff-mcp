@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/conversation-handoff-mcp.svg)](https://www.npmjs.com/package/conversation-handoff-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/trust-delta/conversation-handoff-mcp/actions/workflows/ci.yml)
+[![MCP Apps](https://img.shields.io/badge/MCP_Apps-Ready-blue.svg)](https://github.com/anthropics/mcp-apps)
 
 <a href="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp/badge" />
@@ -14,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **MCP Apps UI (v0.5.0+)**: Interactive UI for browsing and managing handoffs on compatible clients
 - **Auto-Connect (v0.4.0+)**: Server automatically starts in the background - no manual setup required
 - **Auto-Reconnection (v0.4.0+)**: Seamlessly reconnects when server goes down - no manual intervention needed
 - **Memory-Based Storage**: Lightweight temporary clipboard design - no files written to disk
@@ -139,6 +141,16 @@ Check storage usage and limits.
 ```text
 handoff_stats()
 ```
+
+## MCP Apps UI (v0.5.0+)
+
+For MCP Apps-compatible clients, `handoff_list` automatically opens an interactive UI. Non-compatible clients receive the standard JSON response.
+
+### Features
+
+- **List View**: Card-based list showing title, source AI, and date
+- **Detail View**: Expandable cards showing summary and conversation (parsed as User/Assistant messages)
+- **Delete**: Remove handoffs directly from UI
 
 ## Auto-Connect Mode (v0.4.0+)
 
@@ -370,6 +382,18 @@ User's message
 ## Assistant
 AI's response
 ```
+
+## Security
+
+### Prompt Injection Protection
+
+The `handoff_load` output includes security markers to protect against prompt injection attacks:
+
+- **Warning banner**: Alerts AI that content is user-provided and untrusted
+- **Code blocks**: User content is wrapped in code blocks to prevent interpretation as instructions
+- **End marker**: Clear boundary marking end of user content
+
+This prevents malicious content stored in handoffs from being interpreted as AI instructions.
 
 ## License
 

@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RESOURCE_MIME_TYPE,
+  registerAppResource,
+  registerAppTool,
+} from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
@@ -15,6 +22,9 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"
   version: string;
 };
 const VERSION = packageJson.version;
+
+// MCP Apps UI resource URI
+const VIEWER_RESOURCE_URI = "ui://conversation-handoff/viewer.html";
 
 // =============================================================================
 // CLI Arguments
@@ -123,36 +133,34 @@ Note: Data is stored in memory only. Handoffs are lost when the server stops.
 // MCP Server Setup
 // =============================================================================
 
+/**
+ * Register all MCP tools
+ */
 function registerTools(server: McpServer): void {
   // handoff_save
-  server.registerTool(
+  server.tool(
     "handoff_save",
+    "Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.",
     {
-      description:
-        "Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.",
-      inputSchema: {
-        key: z
-          .string()
-          .optional()
-          .describe(
-            "Unique identifier for this handoff (e.g., 'project-design-2024'). Auto-generated if omitted."
-          ),
-        title: z
-          .string()
-          .optional()
-          .describe(
-            "Human-readable title for the handoff. Auto-generated from summary if omitted."
-          ),
-        summary: z.string().describe("Brief summary of the conversation context"),
-        conversation: z
-          .string()
-          .describe("Full conversation in Markdown format (## User / ## Assistant)"),
-        from_ai: z
-          .string()
-          .default("claude")
-          .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
-        from_project: z.string().default("").describe("Name of the source project (optional)"),
-      },
+      key: z
+        .string()
+        .optional()
+        .describe(
+          "Unique identifier for this handoff (e.g., 'project-design-2024'). Auto-generated if omitted."
+        ),
+      title: z
+        .string()
+        .optional()
+        .describe("Human-readable title for the handoff. Auto-generated from summary if omitted."),
+      summary: z.string().describe("Brief summary of the conversation context"),
+      conversation: z
+        .string()
+        .describe("Full conversation in Markdown format (## User / ## Assistant)"),
+      from_ai: z
+        .string()
+        .default("claude")
+        .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
+      from_project: z.string().default("").describe("Name of the source project (optional)"),
     },
     async ({ key, title, summary, conversation, from_ai, from_project }) => {
       // Auto-generate key and title if not provided
@@ -206,62 +214,65 @@ function registerTools(server: McpServer): void {
     }
   );
 
-  // handoff_list
-  server.registerTool(
+  // handoff_list (with MCP Apps UI support)
+  registerAppTool(
+    server,
     "handoff_list",
     {
+      title: "Handoff List",
       description:
-        "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content.",
+        "List all saved handoffs with summaries. Returns lightweight metadata without full conversation content. Opens interactive UI if supported.",
+      inputSchema: {},
+      outputSchema: z.object({
+        count: z.number().describe("Number of handoffs"),
+        handoffs: z
+          .array(
+            z.object({
+              key: z.string(),
+              title: z.string(),
+              summary: z.string(),
+              from_ai: z.string(),
+              from_project: z.string(),
+              created_at: z.string(),
+            })
+          )
+          .describe("List of handoffs"),
+      }),
+      _meta: { ui: { resourceUri: VIEWER_RESOURCE_URI } },
     },
-    async () => {
+    async (): Promise<CallToolResult> => {
       const { storage } = await getStorage();
       const result = await storage.list();
 
       if (!result.success) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `❌ Error: ${result.error}`,
-            },
-          ],
+          content: [{ type: "text", text: `❌ Error: ${result.error}` }],
         };
       }
 
-      if (!result.data || result.data.length === 0) {
+      const handoffs = result.data || [];
+
+      if (handoffs.length === 0) {
         return {
-          content: [
-            {
-              type: "text",
-              text: "No handoffs saved. Use handoff_save to create one.",
-            },
-          ],
+          content: [{ type: "text", text: "No handoffs saved. Use handoff_save to create one." }],
+          structuredContent: { count: 0, handoffs: [] },
         };
       }
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result.data, null, 2),
-          },
-        ],
+        content: [{ type: "text", text: JSON.stringify(handoffs, null, 2) }],
+        structuredContent: { count: handoffs.length, handoffs },
       };
     }
   );
 
   // handoff_load
-  server.registerTool(
+  server.tool(
     "handoff_load",
+    "Load a specific handoff by key. Returns full conversation content.",
     {
-      description: "Load a specific handoff by key. Returns full conversation content.",
-      inputSchema: {
-        key: z.string().describe("The key of the handoff to load"),
-        max_messages: z
-          .number()
-          .optional()
-          .describe("Optional: limit number of messages to return"),
-      },
+      key: z.string().describe("The key of the handoff to load"),
+      max_messages: z.number().optional().describe("Optional: limit number of messages to return"),
     },
     async ({ key, max_messages }) => {
       const { storage } = await getStorage();
@@ -301,14 +312,11 @@ ${handoff.conversation}`,
   );
 
   // handoff_clear
-  server.registerTool(
+  server.tool(
     "handoff_clear",
+    "Clear handoffs. If key is provided, clears only that handoff. Otherwise clears all.",
     {
-      description:
-        "Clear handoffs. If key is provided, clears only that handoff. Otherwise clears all.",
-      inputSchema: {
-        key: z.string().optional().describe("Optional: specific handoff key to clear"),
-      },
+      key: z.string().optional().describe("Optional: specific handoff key to clear"),
     },
     async ({ key }) => {
       const { storage } = await getStorage();
@@ -341,11 +349,10 @@ ${handoff.conversation}`,
   );
 
   // handoff_stats
-  server.registerTool(
+  server.tool(
     "handoff_stats",
-    {
-      description: "Get storage statistics and current limits. Useful for monitoring usage.",
-    },
+    "Get storage statistics and current limits. Useful for monitoring usage.",
+    {},
     async () => {
       const { storage } = await getStorage();
       const result = await storage.stats();
@@ -368,6 +375,25 @@ ${handoff.conversation}`,
             text: JSON.stringify(result.data, null, 2),
           },
         ],
+      };
+    }
+  );
+}
+
+/**
+ * Register MCP Apps UI resources
+ */
+function registerAppUI(server: McpServer): void {
+  // Handoff Viewer UI リソース
+  registerAppResource(
+    server,
+    VIEWER_RESOURCE_URI,
+    VIEWER_RESOURCE_URI,
+    { mimeType: RESOURCE_MIME_TYPE },
+    async (): Promise<ReadResourceResult> => {
+      const html = await fs.readFile(join(__dirname, "..", "dist", "ui", "viewer.html"), "utf-8");
+      return {
+        contents: [{ uri: VIEWER_RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
       };
     }
   );
@@ -398,6 +424,7 @@ async function main(): Promise<void> {
   });
 
   registerTools(server);
+  registerAppUI(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
