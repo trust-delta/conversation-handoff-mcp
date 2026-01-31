@@ -12,7 +12,7 @@ interface HandoffSummary {
   created_at: string;
 }
 
-const app = new App({ name: "Handoff List", version: "1.0.0" });
+const app = new App({ name: "Handoff List", version: "0.5.0" });
 
 // State
 let handoffs: HandoffSummary[] = [];

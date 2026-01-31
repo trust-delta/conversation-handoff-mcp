@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-01-31
+
+### Added
+
+- **MCP Apps UI**: Interactive handoff list with UI for MCP Apps-compatible clients
+  - `handoff_list` now opens interactive UI on compatible clients (falls back to JSON for others)
+  - Card-based list view with title, source AI, and date
+  - Expandable detail view showing summary and conversation (parsed as User/Assistant messages)
+  - Delete button on each card for quick removal
+  - Conversation caching to avoid redundant `handoff_load` calls
+- **`@modelcontextprotocol/ext-apps` integration**: Uses `registerAppTool` and `registerAppResource`
+
+### Changed
+
+- `handoff_list` upgraded from `server.tool()` to `registerAppTool()` for MCP Apps UI support
+- UI built with Vite + vite-plugin-singlefile (bundled as single HTML file)
+
 ## [0.4.2] - 2025-12-13
 
 ### Added
