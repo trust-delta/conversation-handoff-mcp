@@ -145,7 +145,7 @@ async function loadConversation(key: string): Promise<void> {
     conversationCache.set(key, conversation);
     renderConversation(convEl as HTMLElement, conversation);
   } catch (err) {
-    convEl.innerHTML = `<div class="loading">Error: ${err}</div>`;
+    convEl.innerHTML = `<div class="loading">Error: ${escapeHtml(String(err))}</div>`;
   }
 }
 
