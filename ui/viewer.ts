@@ -1,3 +1,6 @@
+/**
+ * @file Handoff Viewer - シンプル版（ontoolresultでデータ受信）
+ */
 import { App } from "@modelcontextprotocol/ext-apps";
 
 interface HandoffSummary {
@@ -9,174 +12,247 @@ interface HandoffSummary {
   created_at: string;
 }
 
-interface HandoffFull extends HandoffSummary {
-  conversation: string;
-}
+const app = new App({ name: "Handoff List", version: "1.0.0" });
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-const app = new App();
-
-const handoffList = document.getElementById("handoffList") as HTMLDivElement;
-const refreshBtn = document.getElementById("refreshBtn") as HTMLButtonElement;
-const viewerHeader = document.getElementById("viewerHeader") as HTMLDivElement;
-const viewerTitle = document.getElementById("viewerTitle") as HTMLHeadingElement;
-const viewerMeta = document.getElementById("viewerMeta") as HTMLDivElement;
-const viewerContent = document.getElementById("viewerContent") as HTMLDivElement;
-
+// State
 let handoffs: HandoffSummary[] = [];
-let selectedKey: string | null = null;
+const conversationCache: Map<string, string> = new Map();
 
-function parseConversation(markdown: string): Message[] {
-  const messages: Message[] = [];
-  const sections = markdown.split(/^##\s+/gm).filter(Boolean);
+// DOM
+const listEl = document.getElementById("list")!;
+const statusEl = document.getElementById("status")!;
 
-  for (const section of sections) {
-    const lines = section.trim().split("\n");
-    const header = lines[0]?.toLowerCase().trim() || "";
-    const content = lines.slice(1).join("\n").trim();
-
-    if (header.includes("user")) {
-      messages.push({ role: "user", content });
-    } else if (header.includes("assistant") || header.includes("claude")) {
-      messages.push({ role: "assistant", content });
-    }
-  }
-  return messages;
+/**
+ * HTMLエスケープ
+ */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function renderHandoffList(): void {
+/**
+ * 日付フォーマット
+ */
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString();
+}
+
+/**
+ * リスト描画
+ */
+function renderList(): void {
   if (handoffs.length === 0) {
-    handoffList.innerHTML = '<div class="empty">No handoffs saved</div>';
+    listEl.innerHTML = '<div class="empty">No handoffs</div>';
     return;
   }
 
-  handoffList.innerHTML = handoffs.map(h => `
-    <div class="handoff-card ${h.key === selectedKey ? 'active' : ''}" data-key="${h.key}">
-      <h3>${escapeHtml(h.title)}</h3>
-      <div class="meta">${h.from_ai} | ${formatDate(h.created_at)}</div>
-    </div>
-  `).join("");
+  listEl.innerHTML = handoffs
+    .map(
+      (h) => `
+      <div class="card" data-key="${escapeHtml(h.key)}">
+        <div class="card-header">
+          <div class="card-content">
+            <div class="title">${escapeHtml(h.title)}</div>
+            <div class="meta">${escapeHtml(h.from_ai)} | ${formatDate(h.created_at)}</div>
+          </div>
+          <div class="card-actions">
+            <button class="btn-expand" data-key="${escapeHtml(h.key)}">View</button>
+            <button class="btn-delete" data-key="${escapeHtml(h.key)}">Delete</button>
+          </div>
+        </div>
+        <div class="card-details">
+          <div class="summary">${escapeHtml(h.summary)}</div>
+          <div class="conversation" data-key="${escapeHtml(h.key)}">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    `
+    )
+    .join("");
 
-  handoffList.querySelectorAll(".handoff-card").forEach(card => {
-    card.addEventListener("click", () => {
-      const key = card.getAttribute("data-key");
-      if (key) loadHandoff(key);
+  // 展開ボタンのイベント登録
+  listEl.querySelectorAll(".btn-expand").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = (btn as HTMLElement).dataset.key;
+      if (key) {
+        const card = listEl.querySelector(`.card[data-key="${key}"]`) as HTMLElement;
+        if (card) toggleCard(card);
+      }
+    });
+  });
+
+  // 削除ボタンのイベント登録
+  listEl.querySelectorAll(".btn-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = (btn as HTMLElement).dataset.key;
+      if (key) deleteHandoff(key);
     });
   });
 }
 
-function renderConversation(handoff: HandoffFull): void {
-  viewerHeader.style.display = "block";
-  viewerTitle.textContent = handoff.title;
-  viewerMeta.textContent = `From: ${handoff.from_ai}${handoff.from_project ? ` (${handoff.from_project})` : ""} | ${formatDate(handoff.created_at)}`;
+/**
+ * カード展開/折り畳みトグル
+ */
+async function toggleCard(card: HTMLElement): Promise<void> {
+  const key = card.dataset.key;
+  if (!key) return;
 
-  const messages = parseConversation(handoff.conversation);
-  if (messages.length === 0) {
-    viewerContent.innerHTML = `<div class="message assistant"><div class="message-content">${escapeHtml(handoff.conversation)}</div></div>`;
+  const wasExpanded = card.classList.contains("expanded");
+
+  // 他のカードを閉じる
+  listEl.querySelectorAll(".card.expanded").forEach((c) => {
+    c.classList.remove("expanded");
+  });
+
+  // 開いていたカードをクリックした場合は閉じるだけ
+  if (wasExpanded) return;
+
+  // 展開
+  card.classList.add("expanded");
+
+  // 会話を読み込み
+  await loadConversation(key);
+}
+
+/**
+ * 会話読み込み
+ */
+async function loadConversation(key: string): Promise<void> {
+  const convEl = listEl.querySelector(`.conversation[data-key="${key}"]`);
+  if (!convEl) return;
+
+  // キャッシュがあれば使う
+  if (conversationCache.has(key)) {
+    renderConversation(convEl as HTMLElement, conversationCache.get(key)!);
     return;
   }
 
-  viewerContent.innerHTML = messages.map(m => `
-    <div class="message ${m.role}">
-      <div class="message-header">${m.role === "user" ? "User" : "Assistant"}</div>
-      <div class="message-content">${escapeHtml(m.content)}</div>
-    </div>
-  `).join("");
+  convEl.innerHTML = '<div class="loading">Loading...</div>';
+
+  try {
+    const result = await app.callServerTool({ name: "handoff_load", arguments: { key } });
+    const content = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text || "";
+
+    // 会話部分を抽出（## Conversation 以降）
+    const match = content.match(/## Conversation\n([\s\S]*)/);
+    const conversation = match ? match[1].trim() : content;
+
+    conversationCache.set(key, conversation);
+    renderConversation(convEl as HTMLElement, conversation);
+  } catch (err) {
+    convEl.innerHTML = `<div class="loading">Error: ${err}</div>`;
+  }
 }
 
-async function loadHandoffList(): Promise<void> {
-  handoffList.innerHTML = '<div class="loading">Loading...</div>';
+/**
+ * 会話を描画
+ */
+function renderConversation(el: HTMLElement, conversation: string): void {
+  // ## User / ## Assistant でパース
+  const messages = parseConversation(conversation);
+
+  if (messages.length === 0) {
+    el.innerHTML = '<div class="loading">No messages</div>';
+    return;
+  }
+
+  el.innerHTML = messages
+    .map(
+      (m) => `
+      <div class="message">
+        <div class="message-role ${m.role}">${m.role === "user" ? "User" : "Assistant"}</div>
+        <div class="message-content">${escapeHtml(m.content)}</div>
+      </div>
+    `
+    )
+    .join("");
+}
+
+/**
+ * 会話パース
+ */
+function parseConversation(text: string): Array<{ role: "user" | "assistant"; content: string }> {
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  const parts = text.split(/^## (User|Assistant)\s*$/im);
+
+  for (let i = 1; i < parts.length; i += 2) {
+    const role = parts[i].toLowerCase() as "user" | "assistant";
+    const content = (parts[i + 1] || "").trim();
+    if (content) {
+      messages.push({ role, content });
+    }
+  }
+
+  return messages;
+}
+
+/**
+ * ハンドオフ削除
+ */
+async function deleteHandoff(key: string): Promise<void> {
+  statusEl.textContent = "Deleting...";
   try {
-    const result = await app.callServerTool("handoff_list", {});
-    const text = result?.content?.[0]?.text;
-    if (text && !text.includes("No handoffs")) {
-      handoffs = JSON.parse(text) as HandoffSummary[];
+    await app.callServerTool({ name: "handoff_clear", arguments: { key } });
+    await refreshList();
+  } catch (err) {
+    statusEl.textContent = `Error: ${err}`;
+  }
+}
+
+/**
+ * リスト再取得
+ */
+async function refreshList(): Promise<void> {
+  statusEl.textContent = "Refreshing...";
+  try {
+    const result = await app.callServerTool({ name: "handoff_list", arguments: {} });
+    // structuredContentからhandoffsを取得
+    const data = (result as { structuredContent?: { handoffs?: HandoffSummary[] } })?.structuredContent;
+    if (data?.handoffs) {
+      handoffs = data.handoffs;
+      renderList();
+      statusEl.textContent = `${handoffs.length} handoffs`;
     } else {
       handoffs = [];
+      renderList();
+      statusEl.textContent = "No handoffs";
     }
-  } catch (e) {
-    console.error("Failed to load handoffs:", e);
-    handoffs = [];
-  }
-  renderHandoffList();
-}
-
-async function loadHandoff(key: string): Promise<void> {
-  selectedKey = key;
-  renderHandoffList();
-  viewerContent.innerHTML = '<div class="loading">Loading...</div>';
-
-  try {
-    const result = await app.callServerTool("handoff_load", { key });
-    const text = result?.content?.[0]?.text;
-    if (text) {
-      // Parse the markdown response
-      const titleMatch = text.match(/^# Handoff: (.+)$/m);
-      const fromMatch = text.match(/\*\*From:\*\* (.+?)(?:\s*\((.+?)\))?$/m);
-      const createdMatch = text.match(/\*\*Created:\*\* (.+)$/m);
-      const summaryMatch = text.match(/## Summary\n([\s\S]*?)(?=\n## Conversation)/);
-      const convMatch = text.match(/## Conversation\n([\s\S]*?)$/);
-
-      const handoff: HandoffFull = {
-        key,
-        title: titleMatch?.[1] || key,
-        from_ai: fromMatch?.[1] || "unknown",
-        from_project: fromMatch?.[2] || "",
-        created_at: createdMatch?.[1] || "",
-        summary: summaryMatch?.[1]?.trim() || "",
-        conversation: convMatch?.[1]?.trim() || text,
-      };
-      renderConversation(handoff);
-    }
-  } catch (e) {
-    console.error("Failed to load handoff:", e);
-    viewerContent.innerHTML = '<div class="empty">Failed to load handoff</div>';
+  } catch (err) {
+    statusEl.textContent = `Error: ${err}`;
   }
 }
 
-function escapeHtml(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
+// ハンドラ登録
+app.ontoolinput = (params) => {
+  console.log("[viewer] ontoolinput:", params);
+  statusEl.textContent = "Loading...";
+};
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleDateString("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return dateStr;
+app.ontoolresult = (result) => {
+  console.log("[viewer] ontoolresult:", result);
+  const data = result.structuredContent as { handoffs?: HandoffSummary[] } | undefined;
+  if (data?.handoffs) {
+    handoffs = data.handoffs;
+    renderList();
+    statusEl.textContent = `${handoffs.length} handoffs`;
   }
-}
+};
 
-// Event handlers
-refreshBtn.addEventListener("click", loadHandoffList);
+app.onerror = (error) => {
+  console.error("[viewer] error:", error);
+  statusEl.textContent = "Error: " + error;
+};
 
-// Initialize
+// 接続
 app.connect().then(() => {
-  // Receive initial tool result (handoff list)
-  app.ontoolresult = (result) => {
-    try {
-      const text = result?.content?.[0]?.text;
-      if (text && !text.includes("No handoffs") && !text.includes("Error")) {
-        handoffs = JSON.parse(text) as HandoffSummary[];
-        renderHandoffList();
-      }
-    } catch {
-      // Initial result might not be JSON, ignore
-    }
-  };
-
-  // Load handoff list
-  loadHandoffList();
+  console.log("[viewer] Connected");
+  statusEl.textContent = "Waiting for data...";
+}).catch((err) => {
+  console.error("[viewer] Connection failed:", err);
+  statusEl.textContent = "Failed: " + err;
 });

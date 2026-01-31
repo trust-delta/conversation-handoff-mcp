@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "build:ui": "INPUT=ui/viewer-simple.html vite build",
+    "build:ui": "INPUT=ui/viewer.html vite build",
     "build": "npm run build:ui && tsc",
     "clean": "rimraf dist",
     "rebuild": "npm run clean && npm run build",

@@ -391,10 +391,7 @@ function registerAppUI(server: McpServer): void {
     VIEWER_RESOURCE_URI,
     { mimeType: RESOURCE_MIME_TYPE },
     async (): Promise<ReadResourceResult> => {
-      const html = await fs.readFile(
-        join(__dirname, "..", "dist", "ui", "viewer-simple.html"),
-        "utf-8"
-      );
+      const html = await fs.readFile(join(__dirname, "..", "dist", "ui", "viewer.html"), "utf-8");
       return {
         contents: [{ uri: VIEWER_RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
       };
