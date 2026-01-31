@@ -28,3 +28,6 @@ coverage/
 
 # npm pack output
 *.tgz
+
+# Claude Code
+.claude/
