@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,30 +39,58 @@ async function checkPort(port: number): Promise<boolean> {
   }
 }
 
+/** Maximum number of concurrent port scans */
+const SCAN_CONCURRENCY = 10;
+
 /**
- * Scan ports in parallel to find a running handoff server.
+ * Split array into chunks of specified size.
+ * @param array - Array to split
+ * @param size - Chunk size
+ * @returns Array of chunks
+ */
+function chunk<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Scan ports to find a running handoff server.
+ * Limits concurrent scans to SCAN_CONCURRENCY to avoid resource exhaustion.
  * @param portRange - Port range to scan (start and end inclusive)
  * @returns Port number if a server is found, null otherwise
  */
 export async function scanForServer(portRange: PortRange): Promise<number | null> {
-  const ports = [];
+  const ports: number[] = [];
   for (let p = portRange.start; p <= portRange.end; p++) {
     ports.push(p);
   }
 
-  const results = await Promise.all(
-    ports.map(async (port) => {
-      const isRunning = await checkPort(port);
-      return isRunning ? port : null;
-    })
-  );
+  // Process ports in chunks to limit concurrency
+  const portChunks = chunk(ports, SCAN_CONCURRENCY);
+  let foundPort: number | null = null;
 
-  for (const port of results) {
-    if (port !== null) {
-      return port;
+  for (const portChunk of portChunks) {
+    if (foundPort !== null) break;
+
+    const results = await Promise.all(
+      portChunk.map(async (port) => {
+        const isRunning = await checkPort(port);
+        return isRunning ? port : null;
+      })
+    );
+
+    for (const port of results) {
+      if (port !== null) {
+        foundPort = port;
+        break;
+      }
     }
   }
-  return null;
+
+  return foundPort;
 }
 
 /**
@@ -212,13 +241,14 @@ export async function autoConnect(): Promise<AutoConnectResult> {
 
 /**
  * Generate a unique handoff key with timestamp and random suffix.
- * Format: handoff-YYYYMMDDHHMMSS-random6chars
+ * Format: handoff-YYYYMMDDHHMMSS-random8chars
+ * Uses crypto.randomUUID for cryptographically secure random generation.
  * @returns Unique key string
  */
 export function generateKey(): string {
   const now = new Date();
   const timestamp = now.toISOString().replace(/[-:T]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
-  const random = Math.random().toString(36).slice(2, 8);
+  const random = randomUUID().replace(/-/g, "").slice(0, 8);
   return `handoff-${timestamp}-${random}`;
 }
 

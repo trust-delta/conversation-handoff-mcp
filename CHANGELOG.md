@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-02-04
+
+### Security
+
+- **Cryptographically Secure Key Generation**: Replaced `Math.random()` with `crypto.randomUUID()` for handoff key generation
+- **CORS Restriction**: Limited allowed origins to `localhost` and `127.0.0.1` only (previously allowed all origins)
+- **Localhost Binding**: HTTP server now binds to `127.0.0.1` instead of all interfaces (prevents network access)
+- **HTTP Input Validation**: Added `validateSaveInput()` for type-safe request body validation
+- **Fetch Timeout**: Added 30-second timeout to remote storage HTTP requests (prevents DoS via slow responses)
+- **Port Scan Rate Limiting**: Limited concurrent port scans to 10 (prevents resource exhaustion)
+
+### Added
+
+- `handoff_load` now returns `structuredContent` in addition to text content
+- UI viewer prioritizes `structuredContent` over text parsing (more reliable)
+- New test files: `src/autoconnect.test.ts`, `src/server.test.ts`
+- New config option: `HANDOFF_FETCH_TIMEOUT` environment variable (default: 30 seconds)
+
+### Changed
+
+- Key format changed from `handoff-YYYYMMDDHHMMSS-[a-z0-9]{6}` to `handoff-YYYYMMDDHHMMSS-[a-f0-9]{8}` (hex characters from UUID)
+
 ## [0.5.0] - 2026-01-31
 
 ### Added

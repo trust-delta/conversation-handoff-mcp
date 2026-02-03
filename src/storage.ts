@@ -374,17 +374,21 @@ export class RemoteStorage implements Storage {
     const url = `${this.serverUrl}${path}`;
 
     let response: Response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), connectionConfig.fetchTimeoutMs);
+
     try {
       response = await fetch(url, {
         method,
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
     } catch (error) {
       // Connection failed - attempt reconnect and retry
       const reconnected = await this.tryReconnect();
       if (reconnected) {
-        // Retry the request with new server URL
+        // Retry the request with new server URL (new AbortController will be created)
         return this.request(method, path, body, saveInput);
       }
 
@@ -401,6 +405,8 @@ export class RemoteStorage implements Storage {
       }
 
       return result;
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     // Reset reconnect attempts on successful connection
