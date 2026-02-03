@@ -6,6 +6,7 @@ import {
   validateConversation,
   validateHandoff,
   validateKey,
+  validateSaveInput,
   validateSummary,
   validateTitle,
 } from "./validation.js";
@@ -228,5 +229,67 @@ Second answer`;
     const conversation = "## user\nHello\n\n## assistant\nHi there!";
     const messages = splitConversationMessages(conversation);
     expect(messages.length).toBe(2);
+  });
+});
+
+describe("validateSaveInput", () => {
+  const validInput = {
+    key: "test-key",
+    title: "Test Title",
+    summary: "Test summary",
+    conversation: "Test conversation",
+    from_ai: "claude",
+    from_project: "test-project",
+  };
+
+  it("should accept valid input", () => {
+    const result = validateSaveInput(validInput);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should reject null", () => {
+    const result = validateSaveInput(null);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Request body must be an object");
+  });
+
+  it("should reject array", () => {
+    const result = validateSaveInput([]);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Request body must be an object");
+  });
+
+  it("should reject primitive types", () => {
+    expect(validateSaveInput("string").valid).toBe(false);
+    expect(validateSaveInput(123).valid).toBe(false);
+    expect(validateSaveInput(undefined).valid).toBe(false);
+  });
+
+  it("should reject missing required fields", () => {
+    const fields = ["key", "title", "summary", "conversation", "from_ai", "from_project"];
+    for (const field of fields) {
+      const input = { ...validInput };
+      delete (input as Record<string, unknown>)[field];
+      const result = validateSaveInput(input);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(`Missing required field: ${field}`);
+    }
+  });
+
+  it("should reject non-string fields", () => {
+    const fields = ["key", "title", "summary", "conversation", "from_ai", "from_project"];
+    for (const field of fields) {
+      const input = { ...validInput, [field]: 123 };
+      const result = validateSaveInput(input);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(`Field '${field}' must be a string`);
+    }
+  });
+
+  it("should allow empty string for from_project", () => {
+    const input = { ...validInput, from_project: "" };
+    const result = validateSaveInput(input);
+    expect(result.valid).toBe(true);
   });
 });

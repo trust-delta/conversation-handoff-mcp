@@ -307,6 +307,15 @@ ${handoff.summary}
 ${handoff.conversation}`,
           },
         ],
+        structuredContent: {
+          key: handoff.key,
+          title: handoff.title,
+          summary: handoff.summary,
+          conversation: handoff.conversation,
+          from_ai: handoff.from_ai,
+          from_project: handoff.from_project,
+          created_at: handoff.created_at,
+        },
       };
     }
   );

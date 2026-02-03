@@ -22,6 +22,8 @@ export interface ConnectionConfig {
   retryIntervalMs: number;
   /** Server TTL in ms (0 = disabled). Server shuts down after this time of inactivity. */
   serverTtlMs: number;
+  /** Fetch timeout in ms for HTTP requests */
+  fetchTimeoutMs: number;
 }
 
 /**
@@ -141,6 +143,42 @@ export function validateHandoff(
 }
 
 // =============================================================================
+// HTTP API Input Validation
+// =============================================================================
+
+export interface SaveInputValidation {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Validate HTTP API save input.
+ * Checks required fields and their types.
+ * @param input - Raw input from HTTP request body
+ * @returns Validation result with error message if invalid
+ */
+export function validateSaveInput(input: unknown): SaveInputValidation {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { valid: false, error: "Request body must be an object" };
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  // Required string fields
+  const requiredFields = ["key", "title", "summary", "conversation", "from_ai", "from_project"];
+  for (const field of requiredFields) {
+    if (!(field in obj)) {
+      return { valid: false, error: `Missing required field: ${field}` };
+    }
+    if (typeof obj[field] !== "string") {
+      return { valid: false, error: `Field '${field}' must be a string` };
+    }
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
 // Utilities
 // =============================================================================
 
@@ -227,4 +265,5 @@ export const connectionConfig: ConnectionConfig = {
   retryCount: parseEnvInt(process.env.HANDOFF_RETRY_COUNT, 30),
   retryIntervalMs: parseEnvInt(process.env.HANDOFF_RETRY_INTERVAL, 10000),
   serverTtlMs: parseEnvInt(process.env.HANDOFF_SERVER_TTL, 24 * 60 * 60 * 1000, 0), // Default: 24 hours, min: 0 (disabled)
+  fetchTimeoutMs: parseEnvInt(process.env.HANDOFF_FETCH_TIMEOUT, 30 * 1000), // Default: 30 seconds
 };

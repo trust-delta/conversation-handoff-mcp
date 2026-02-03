@@ -121,6 +121,19 @@ async function toggleCard(card: HTMLElement): Promise<void> {
 }
 
 /**
+ * structuredContent からの会話データ型
+ */
+interface HandoffStructuredContent {
+  key: string;
+  title: string;
+  summary: string;
+  conversation: string;
+  from_ai: string;
+  from_project: string;
+  created_at: string;
+}
+
+/**
  * 会話読み込み
  */
 async function loadConversation(key: string): Promise<void> {
@@ -137,11 +150,19 @@ async function loadConversation(key: string): Promise<void> {
 
   try {
     const result = await app.callServerTool({ name: "handoff_load", arguments: { key } });
-    const content = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text || "";
 
-    // 会話部分を抽出（## Conversation 以降）
-    const match = content.match(/## Conversation\n([\s\S]*)/);
-    const conversation = match ? match[1].trim() : content;
+    // structuredContentを優先利用（テキストパースはフォールバック）
+    const structured = (result as { structuredContent?: HandoffStructuredContent })?.structuredContent;
+    let conversation: string;
+
+    if (structured?.conversation) {
+      conversation = structured.conversation;
+    } else {
+      // フォールバック: テキストからパース
+      const content = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text || "";
+      const match = content.match(/## Conversation\n([\s\S]*)/);
+      conversation = match ? match[1].trim() : content;
+    }
 
     conversationCache.set(key, conversation);
     renderConversation(convEl as HTMLElement, conversation);

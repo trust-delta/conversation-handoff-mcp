@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findAvailablePort } from "./autoconnect.js";
 import { LocalStorage, type SaveInput } from "./storage.js";
-import { connectionConfig, defaultConfig } from "./validation.js";
+import { connectionConfig, defaultConfig, validateSaveInput } from "./validation.js";
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -169,6 +169,29 @@ export class HttpServer {
   }
 
   /**
+   * Allowed CORS origin patterns (localhost only for security)
+   */
+  private static readonly ALLOWED_ORIGIN_PATTERNS = [
+    /^http:\/\/localhost(:\d+)?$/,
+    /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+  ];
+
+  /**
+   * Set CORS headers with origin validation.
+   * Only allows localhost and 127.0.0.1 origins.
+   * @param req - HTTP request object
+   * @param res - HTTP response object
+   */
+  private setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
+    const origin = req.headers.origin;
+    if (origin && HttpServer.ALLOWED_ORIGIN_PATTERNS.some((p) => p.test(origin))) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
+
+  /**
    * Handle incoming HTTP request and route to appropriate handler.
    * @param req - HTTP request object
    * @param res - HTTP response object
@@ -180,10 +203,8 @@ export class HttpServer {
     const method = req.method || "GET";
     const { path, key, query } = this.parseRoute(req.url || "/");
 
-    // CORS headers for flexibility
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    // CORS headers (restricted to localhost/127.0.0.1)
+    this.setCorsHeaders(req, res);
 
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -196,14 +217,22 @@ export class HttpServer {
       if (method === "POST" && path === "/handoff") {
         const body = await this.readBody(req);
 
-        let input: SaveInput;
+        let rawInput: unknown;
         try {
-          input = JSON.parse(body) as SaveInput;
+          rawInput = JSON.parse(body);
         } catch {
           this.sendJson(res, 400, { error: "Invalid JSON in request body" });
           return;
         }
 
+        // Validate input structure
+        const validation = validateSaveInput(rawInput);
+        if (!validation.valid) {
+          this.sendJson(res, 400, { error: validation.error });
+          return;
+        }
+
+        const input = rawInput as SaveInput;
         const result = await this.storage.save(input);
         if (result.success) {
           this.sendJson(res, 200, result.data);
@@ -322,7 +351,7 @@ export class HttpServer {
         });
       });
 
-      this.server.listen(this.port, () => {
+      this.server.listen(this.port, "127.0.0.1", () => {
         console.log(`Conversation Handoff Server running on http://localhost:${this.port}`);
         console.log("");
         console.log("Endpoints:");
