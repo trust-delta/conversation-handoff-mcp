@@ -18,35 +18,35 @@ describe("HttpServer", () => {
 
   describe("CORS", () => {
     it("should set CORS header for localhost origin", async () => {
-      const response = await fetch(`http://localhost:${testPort}/`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/`, {
         headers: { Origin: "http://localhost:3000" },
       });
       expect(response.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:3000");
     });
 
     it("should set CORS header for 127.0.0.1 origin", async () => {
-      const response = await fetch(`http://localhost:${testPort}/`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/`, {
         headers: { Origin: "http://127.0.0.1:8080" },
       });
       expect(response.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:8080");
     });
 
     it("should not set CORS header for external origin", async () => {
-      const response = await fetch(`http://localhost:${testPort}/`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/`, {
         headers: { Origin: "http://example.com" },
       });
       expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
     });
 
     it("should not set CORS header for malicious localhost variation", async () => {
-      const response = await fetch(`http://localhost:${testPort}/`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/`, {
         headers: { Origin: "http://localhost.evil.com" },
       });
       expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
     });
 
     it("should handle OPTIONS preflight request", async () => {
-      const response = await fetch(`http://localhost:${testPort}/handoff`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`, {
         method: "OPTIONS",
         headers: { Origin: "http://localhost:3000" },
       });
@@ -59,7 +59,7 @@ describe("HttpServer", () => {
 
   describe("Input validation", () => {
     it("should reject invalid JSON", async () => {
-      const response = await fetch(`http://localhost:${testPort}/handoff`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "invalid json",
@@ -70,7 +70,7 @@ describe("HttpServer", () => {
     });
 
     it("should reject non-object body", async () => {
-      const response = await fetch(`http://localhost:${testPort}/handoff`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify("string"),
@@ -81,7 +81,7 @@ describe("HttpServer", () => {
     });
 
     it("should reject missing required fields", async () => {
-      const response = await fetch(`http://localhost:${testPort}/handoff`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: "test" }),
@@ -92,7 +92,7 @@ describe("HttpServer", () => {
     });
 
     it("should accept valid input", async () => {
-      const response = await fetch(`http://localhost:${testPort}/handoff`, {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +112,7 @@ describe("HttpServer", () => {
     it("should only be accessible via localhost", async () => {
       // This test verifies the server is bound to 127.0.0.1
       // by checking we can access it via localhost
-      const response = await fetch(`http://localhost:${testPort}/`);
+      const response = await fetch(`http://127.0.0.1:${testPort}/`);
       expect(response.ok).toBe(true);
     });
   });
