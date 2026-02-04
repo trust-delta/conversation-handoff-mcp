@@ -12,7 +12,7 @@ interface HandoffSummary {
   created_at: string;
 }
 
-const app = new App({ name: "Handoff List", version: "0.5.0" });
+const app = new App({ name: "Handoff List", version: "0.5.2" });
 
 // State
 let handoffs: HandoffSummary[] = [];
@@ -62,6 +62,7 @@ function renderList(): void {
           </div>
           <div class="card-actions">
             <button class="btn-expand" data-key="${escapeHtml(h.key)}">View</button>
+            <button class="btn-load" data-key="${escapeHtml(h.key)}">Load</button>
             <button class="btn-delete" data-key="${escapeHtml(h.key)}">Delete</button>
           </div>
         </div>
@@ -92,6 +93,14 @@ function renderList(): void {
     btn.addEventListener("click", () => {
       const key = (btn as HTMLElement).dataset.key;
       if (key) deleteHandoff(key);
+    });
+  });
+
+  // Loadボタンのイベント登録
+  listEl.querySelectorAll(".btn-load").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = (btn as HTMLElement).dataset.key;
+      if (key) loadHandoff(key);
     });
   });
 }
@@ -211,6 +220,42 @@ function parseConversation(text: string): Array<{ role: "user" | "assistant"; co
   }
 
   return messages;
+}
+
+/**
+ * ハンドオフをLLMに読み込ませる
+ */
+async function loadHandoff(key: string): Promise<void> {
+  statusEl.textContent = "Loading handoff...";
+  try {
+    const result = await app.callServerTool({ name: "handoff_load", arguments: { key } });
+    const structured = (result as { structuredContent?: HandoffStructuredContent })?.structuredContent;
+
+    if (structured) {
+      // コンテキスト全体をメッセージとして送信
+      const message = `以下の会話ハンドオフをロードしました。このコンテキストを引き継いで会話を続けてください。
+
+# ${structured.title}
+
+**From:** ${structured.from_ai} | **Project:** ${structured.from_project} | **Created:** ${structured.created_at}
+
+## サマリー
+${structured.summary}
+
+## 会話履歴
+${structured.conversation}`;
+
+      await app.sendMessage({
+        role: "user",
+        content: [{ type: "text", text: message }]
+      });
+      statusEl.textContent = "Handoff inserted - press Enter to send";
+    } else {
+      statusEl.textContent = "Failed to load handoff";
+    }
+  } catch (err) {
+    statusEl.textContent = `Error: ${err}`;
+  }
 }
 
 /**
