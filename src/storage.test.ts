@@ -478,7 +478,7 @@ describe("LocalStorage", () => {
       expect(loaded.data?.from_ai).toBe("claude");
     });
 
-    it("should handle FIFO when at capacity after merge", async () => {
+    it("should handle FIFO when at capacity after merge and protect source keys", async () => {
       // Fill to capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
         await storage.save(createHandoff(`fill-${i}`));
@@ -493,9 +493,19 @@ describe("LocalStorage", () => {
       });
       expect(result.success).toBe(true);
 
-      // The oldest non-source handoff should have been deleted to make room
+      // Should still be at max capacity
       const list = await storage.list();
       expect(list.data?.length).toBe(testConfig.maxHandoffs);
+
+      // Source handoffs should still exist (protected from FIFO)
+      const fill0 = await storage.load("fill-0");
+      expect(fill0.success).toBe(true);
+      const fill1 = await storage.load("fill-1");
+      expect(fill1.success).toBe(true);
+
+      // The oldest non-source handoff (fill-2) should have been deleted
+      const fill2 = await storage.load("fill-2");
+      expect(fill2.success).toBe(false);
     });
   });
 });

@@ -62,6 +62,9 @@ export interface ValidationResult {
   error?: string;
 }
 
+/** Reserved keys that conflict with API route paths */
+const RESERVED_KEYS = new Set(["merge"]);
+
 export function validateKey(key: string, config: Config = defaultConfig): ValidationResult {
   if (!key || key.length === 0) {
     return { valid: false, error: "Key is required" };
@@ -74,6 +77,9 @@ export function validateKey(key: string, config: Config = defaultConfig): Valida
       valid: false,
       error: "Key must contain only alphanumeric characters, hyphens, and underscores",
     };
+  }
+  if (RESERVED_KEYS.has(key)) {
+    return { valid: false, error: `Key "${key}" is reserved and cannot be used` };
   }
   return { valid: true };
 }

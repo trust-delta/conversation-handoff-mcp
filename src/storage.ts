@@ -9,6 +9,7 @@ import {
   validateHandoff,
   validateKey,
   validateSummary,
+  validateTitle,
 } from "./validation.js";
 import type { Config } from "./validation.js";
 
@@ -123,13 +124,15 @@ export class LocalStorage implements Storage {
   }
 
   /**
-   * Delete the oldest handoff (FIFO) to make room for new ones
+   * Delete the oldest handoff (FIFO) to make room for new ones.
+   * @param protectedKeys - Optional set of keys to exclude from deletion
    */
-  private deleteOldestHandoff(): string | null {
+  private deleteOldestHandoff(protectedKeys?: Set<string>): string | null {
     let oldestKey: string | null = null;
     let oldestDate: Date | null = null;
 
     for (const [key, handoff] of this.handoffs) {
+      if (protectedKeys?.has(key)) continue;
       const createdAt = new Date(handoff.created_at);
       if (oldestDate === null || createdAt < oldestDate) {
         oldestDate = createdAt;
@@ -403,14 +406,21 @@ export class LocalStorage implements Storage {
       }
     }
 
-    // 10. FIFO capacity check for new key
+    // 10. FIFO capacity check for new key (protect source keys when delete_sources=false)
     const isNewKey = !this.handoffs.has(mergedKey);
     if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
-      this.deleteOldestHandoff();
+      const protectedKeys = input.delete_sources ? new Set<string>() : keySet;
+      this.deleteOldestHandoff(protectedKeys);
     }
 
     // Generate or use provided title
     const mergedTitle = input.new_title || generateTitle(mergedSummary);
+
+    // Validate title
+    const titleValidation = validateTitle(mergedTitle, this.config);
+    if (!titleValidation.valid) {
+      return { success: false, error: titleValidation.error };
+    }
 
     // Save merged handoff
     const mergedHandoff: Handoff = {

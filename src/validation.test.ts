@@ -43,6 +43,12 @@ describe("validateKey", () => {
   it("should accept valid key", () => {
     expect(validateKey("valid-key_123", testConfig).valid).toBe(true);
   });
+
+  it("should reject reserved key 'merge'", () => {
+    const result = validateKey("merge", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("reserved");
+  });
 });
 
 describe("validateTitle", () => {

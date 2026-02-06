@@ -430,7 +430,7 @@ ${handoff.conversation}`,
         strategy,
       });
 
-      if (!result.success) {
+      if (!result.success || !result.data) {
         return {
           content: [
             {
@@ -441,11 +441,11 @@ ${handoff.conversation}`,
         };
       }
 
-      let message = `✅ ${result.data?.message}`;
-      if (result.data?.deleted_sources) {
+      let message = `✅ ${result.data.message}`;
+      if (result.data.deleted_sources) {
         message += "\n\nSource handoffs have been deleted.";
       }
-      message += `\n\nTo load the merged handoff, use: handoff_load("${result.data?.merged_key}")`;
+      message += `\n\nTo load the merged handoff, use: handoff_load("${result.data.merged_key}")`;
 
       return {
         content: [
