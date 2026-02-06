@@ -15,6 +15,7 @@ AIチャット間、または同AIの異なるプロジェクト間で会話コ�
 
 ## 特徴
 
+- **Handoffマージ (v0.6.0+)**: 複数の関連handoffを1つに統合して一括引き継ぎ
 - **MCP Apps UI (v0.5.0+)**: 対応クライアントでhandoffの閲覧・管理ができるインタラクティブUI
 - **オートコネクト (v0.4.0+)**: サーバーがバックグラウンドで自動起動 - 手動設定不要
 - **自動再接続 (v0.4.0+)**: サーバーダウン時に自動復旧 - ユーザー介入不要
@@ -133,6 +134,33 @@ handoff_load(key: "project-design", max_messages: 10)  // 最新10件のみ
 handoff_clear(key: "project-design")  // 特定のキー
 handoff_clear()  // 全削除
 ```
+
+### handoff_merge (v0.6.0+)
+
+複数の関連handoffを1つに統合。別セッションで議論した関連トピックをまとめて引き継ぎ可能。
+
+```text
+// 2つのhandoffをマージ（デフォルトは時系列順）
+handoff_merge(keys: ["session-1", "session-2"])
+
+// カスタムキー指定 + ソース削除
+handoff_merge(
+  keys: ["design-v1", "design-v2", "design-v3"],
+  new_key: "design-final",
+  new_title: "最終設計ドキュメント",
+  delete_sources: true,
+  strategy: "sequential"
+)
+```
+
+| パラメータ | 必須 | デフォルト | 説明 |
+|-----------|------|-----------|------|
+| `keys` | はい | - | マージするhandoffキーの配列（最低2つ） |
+| `new_key` | いいえ | 自動生成 | マージ後のキー |
+| `new_title` | いいえ | 自動生成 | マージ後のタイトル |
+| `new_summary` | いいえ | 自動生成 | マージ後のサマリー |
+| `delete_sources` | いいえ | `false` | マージ後にソースhandoffを削除 |
+| `strategy` | いいえ | `"chronological"` | `"chronological"`（作成日時順）または `"sequential"`（配列順） |
 
 ### handoff_stats
 
@@ -288,6 +316,7 @@ npx conversation-handoff-mcp --serve --port 3000
 | メソッド | パス | 説明 |
 |---------|------|------|
 | POST | /handoff | handoffを保存 |
+| POST | /handoff/merge | 複数handoffをマージ |
 | GET | /handoff | handoff一覧を取得 |
 | GET | /handoff/:key | 特定のhandoffを取得 |
 | DELETE | /handoff/:key | 特定のhandoffを削除 |

@@ -108,6 +108,89 @@ describe("HttpServer", () => {
     });
   });
 
+  describe("Merge endpoint", () => {
+    // Setup: save two handoffs for merge tests
+    beforeAll(async () => {
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "merge-a",
+          title: "Merge A",
+          summary: "Summary A",
+          conversation: "## User\nQuestion A\n\n## Assistant\nAnswer A",
+          from_ai: "claude",
+          from_project: "test",
+        }),
+      });
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "merge-b",
+          title: "Merge B",
+          summary: "Summary B",
+          conversation: "## User\nQuestion B\n\n## Assistant\nAnswer B",
+          from_ai: "claude",
+          from_project: "test",
+        }),
+      });
+    });
+
+    it("should merge handoffs successfully", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keys: ["merge-a", "merge-b"],
+          delete_sources: false,
+          strategy: "chronological",
+        }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as { merged_key: string; source_count: number };
+      expect(data.merged_key).toBeDefined();
+      expect(data.source_count).toBe(2);
+    });
+
+    it("should return 400 for invalid JSON", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "invalid json",
+      });
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error: string };
+      expect(data.error).toBe("Invalid JSON in request body");
+    });
+
+    it("should return 404 for non-existent key", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keys: ["merge-a", "non-existent"],
+          delete_sources: false,
+          strategy: "chronological",
+        }),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 400 for invalid input structure", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keys: ["only-one"],
+          delete_sources: false,
+          strategy: "chronological",
+        }),
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   describe("Binding", () => {
     it("should only be accessible via localhost", async () => {
       // This test verifies the server is bound to 127.0.0.1

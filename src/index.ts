@@ -387,6 +387,76 @@ ${handoff.conversation}`,
       };
     }
   );
+
+  // handoff_merge
+  server.tool(
+    "handoff_merge",
+    "Merge multiple handoffs into one. Combines conversations and metadata from related handoffs into a single unified handoff.",
+    {
+      keys: z.array(z.string()).min(2).describe("Keys of the handoffs to merge (minimum 2)"),
+      new_key: z
+        .string()
+        .optional()
+        .describe("Key for the merged handoff. Auto-generated if omitted."),
+      new_title: z
+        .string()
+        .optional()
+        .describe("Title for the merged handoff. Auto-generated if omitted."),
+      new_summary: z
+        .string()
+        .optional()
+        .describe(
+          "Summary for the merged handoff. Auto-generated from source summaries if omitted."
+        ),
+      delete_sources: z
+        .boolean()
+        .default(false)
+        .describe("Whether to delete source handoffs after merging"),
+      strategy: z
+        .enum(["chronological", "sequential"])
+        .default("chronological")
+        .describe(
+          "Merge strategy: 'chronological' sorts by creation time, 'sequential' keeps array order"
+        ),
+    },
+    async ({ keys, new_key, new_title, new_summary, delete_sources, strategy }) => {
+      const { storage } = await getStorage();
+      const result = await storage.merge({
+        keys,
+        new_key,
+        new_title,
+        new_summary,
+        delete_sources,
+        strategy,
+      });
+
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ Error: ${result.error}`,
+            },
+          ],
+        };
+      }
+
+      let message = `✅ ${result.data?.message}`;
+      if (result.data?.deleted_sources) {
+        message += "\n\nSource handoffs have been deleted.";
+      }
+      message += `\n\nTo load the merged handoff, use: handoff_load("${result.data?.merged_key}")`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+      };
+    }
+  );
 }
 
 /**

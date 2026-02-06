@@ -178,6 +178,84 @@ export function validateSaveInput(input: unknown): SaveInputValidation {
   return { valid: true };
 }
 
+/** Valid merge strategy types */
+export type MergeStrategy = "chronological" | "sequential";
+
+/** Valid merge strategies as a constant array for runtime validation */
+const VALID_MERGE_STRATEGIES: readonly MergeStrategy[] = ["chronological", "sequential"] as const;
+
+/**
+ * Validate HTTP API merge input.
+ * Checks required fields, types, key validity, and duplicate detection.
+ * @param input - Raw input from HTTP request body
+ * @returns Validation result with error message if invalid
+ */
+export function validateMergeInput(input: unknown): SaveInputValidation {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { valid: false, error: "Request body must be an object" };
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  // keys: required, string[], 2+ elements, each valid
+  if (!("keys" in obj)) {
+    return { valid: false, error: "Missing required field: keys" };
+  }
+  if (!Array.isArray(obj.keys)) {
+    return { valid: false, error: "Field 'keys' must be an array" };
+  }
+  if (obj.keys.length < 2) {
+    return { valid: false, error: "Field 'keys' must have at least 2 elements" };
+  }
+  for (const key of obj.keys) {
+    if (typeof key !== "string") {
+      return { valid: false, error: "Each element in 'keys' must be a string" };
+    }
+    const keyResult = validateKey(key);
+    if (!keyResult.valid) {
+      return { valid: false, error: `Invalid key '${key}': ${keyResult.error}` };
+    }
+  }
+
+  // Duplicate key detection
+  const uniqueKeys = new Set(obj.keys as string[]);
+  if (uniqueKeys.size !== obj.keys.length) {
+    return { valid: false, error: "Duplicate keys are not allowed" };
+  }
+
+  // strategy: required, must be valid value
+  if (!("strategy" in obj)) {
+    return { valid: false, error: "Missing required field: strategy" };
+  }
+  if (
+    typeof obj.strategy !== "string" ||
+    !VALID_MERGE_STRATEGIES.includes(obj.strategy as MergeStrategy)
+  ) {
+    return {
+      valid: false,
+      error: `Field 'strategy' must be one of: ${VALID_MERGE_STRATEGIES.join(", ")}`,
+    };
+  }
+
+  // delete_sources: required, boolean
+  if (!("delete_sources" in obj)) {
+    return { valid: false, error: "Missing required field: delete_sources" };
+  }
+  if (typeof obj.delete_sources !== "boolean") {
+    return { valid: false, error: "Field 'delete_sources' must be a boolean" };
+  }
+
+  // Optional string fields
+  const optionalStringFields = ["new_key", "new_title", "new_summary"];
+  for (const field of optionalStringFields) {
+    if (field in obj && typeof obj[field] !== "string") {
+      return { valid: false, error: `Field '${field}' must be a string` };
+    }
+  }
+
+  return { valid: true };
+}
+
 // =============================================================================
 // Utilities
 // =============================================================================

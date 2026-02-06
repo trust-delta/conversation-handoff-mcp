@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Merge Handoffs (v0.6.0+)**: Combine multiple related handoffs into one unified context
 - **MCP Apps UI (v0.5.0+)**: Interactive UI for browsing and managing handoffs on compatible clients
 - **Auto-Connect (v0.4.0+)**: Server automatically starts in the background - no manual setup required
 - **Auto-Reconnection (v0.4.0+)**: Seamlessly reconnects when server goes down - no manual intervention needed
@@ -133,6 +134,33 @@ Delete handoffs.
 handoff_clear(key: "project-design")  // Specific key
 handoff_clear()  // Clear all
 ```
+
+### handoff_merge (v0.6.0+)
+
+Merge multiple related handoffs into one. Useful for combining discussions from separate sessions.
+
+```text
+// Merge two handoffs (chronological order by default)
+handoff_merge(keys: ["session-1", "session-2"])
+
+// With custom key and delete sources
+handoff_merge(
+  keys: ["design-v1", "design-v2", "design-v3"],
+  new_key: "design-final",
+  new_title: "Final Design Document",
+  delete_sources: true,
+  strategy: "sequential"
+)
+```
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `keys` | Yes | - | Array of handoff keys to merge (min 2) |
+| `new_key` | No | auto | Key for merged handoff |
+| `new_title` | No | auto | Title for merged handoff |
+| `new_summary` | No | auto | Summary for merged handoff |
+| `delete_sources` | No | `false` | Delete source handoffs after merge |
+| `strategy` | No | `"chronological"` | `"chronological"` (by creation time) or `"sequential"` (array order) |
 
 ### handoff_stats
 
@@ -287,6 +315,7 @@ npx conversation-handoff-mcp --serve --port 3000
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | /handoff | Save a handoff |
+| POST | /handoff/merge | Merge multiple handoffs |
 | GET | /handoff | List all handoffs |
 | GET | /handoff/:key | Load a specific handoff |
 | DELETE | /handoff/:key | Delete a specific handoff |

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-07
+
+### Added
+
+- **`handoff_merge` Tool**: Merge multiple related handoffs into a single unified handoff
+  - Combine conversations from separate sessions into one continuous context
+  - Two merge strategies: `chronological` (sorted by creation time) or `sequential` (array order)
+  - Auto-generated or custom key/title/summary for merged handoff
+  - `delete_sources` option to remove source handoffs after merging
+  - Conversations joined with `---` separator and `<!-- Source: key -->` markers
+  - Metadata merging: `from_ai`/`from_project` unified when same, comma-joined when different
+  - Validation: size limits, duplicate key detection, key collision checks
+- `POST /handoff/merge` HTTP endpoint for shared server mode
+- `validateMergeInput()` validation function
+- 29 new tests (total: 122)
+
 ## [0.5.1] - 2026-02-04
 
 ### Security
