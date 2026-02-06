@@ -19,7 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Validation: size limits, duplicate key detection, key collision checks
 - `POST /handoff/merge` HTTP endpoint for shared server mode
 - `validateMergeInput()` validation function
-- 29 new tests (total: 122)
+- Reserved key `"merge"` to prevent conflicts with API routes
+- 30 new tests (total: 123)
+
+## [0.5.2] - 2026-02-05
+
+### Added
+
+- **Load Button in MCP Apps UI**: Added "Load" button to handoff list UI for loading conversation context
+  - Clicking "Load" inserts handoff content into chat input field
+  - User presses Enter to send and continue conversation with full context
+
+### Known Limitations
+
+- **MCP Apps vs Claude Desktop Implementation Gap**: According to MCP Apps specification, `sendMessage` should add messages directly to conversation and trigger model response. However, Claude Desktop's current implementation inserts messages into chat input field instead, requiring user to press Enter. This is expected to improve in future Claude Desktop updates.
 
 ## [0.5.1] - 2026-02-04
 

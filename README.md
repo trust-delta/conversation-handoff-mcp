@@ -178,7 +178,12 @@ For MCP Apps-compatible clients, `handoff_list` automatically opens an interacti
 
 - **List View**: Card-based list showing title, source AI, and date
 - **Detail View**: Expandable cards showing summary and conversation (parsed as User/Assistant messages)
+- **Load (v0.5.2+)**: Insert handoff content into chat to continue conversation
 - **Delete**: Remove handoffs directly from UI
+
+### Known Limitations
+
+> **Note**: According to the MCP Apps specification, `sendMessage` should add messages directly to the conversation and trigger a model response. However, Claude Desktop's current implementation inserts the message into the chat input field instead, requiring the user to press Enter. When you click "Load", the handoff content will be inserted into the input field - press Enter to send it to Claude. This behavior is expected to improve in future Claude Desktop updates.
 
 ## Auto-Connect Mode (v0.4.0+)
 
