@@ -1,11 +1,15 @@
-import { type AutoConnectResult, autoConnect } from "./autoconnect.js";
+import { type AutoConnectResult, autoConnect, generateKey, generateTitle } from "./autoconnect.js";
 import {
   connectionConfig,
   defaultConfig,
   formatBytes,
   sleep,
   splitConversationMessages,
+  validateConversation,
   validateHandoff,
+  validateKey,
+  validateSummary,
+  validateTitle,
 } from "./validation.js";
 import type { Config } from "./validation.js";
 
@@ -59,6 +63,22 @@ export interface StorageStats {
   };
 }
 
+export interface MergeInput {
+  keys: string[];
+  new_key?: string;
+  new_title?: string;
+  new_summary?: string;
+  delete_sources: boolean;
+  strategy: "chronological" | "sequential";
+}
+
+export interface MergeResult {
+  message: string;
+  merged_key: string;
+  source_count: number;
+  deleted_sources: boolean;
+}
+
 export interface StorageResult<T> {
   success: boolean;
   data?: T;
@@ -79,6 +99,7 @@ export interface Storage {
   load(key: string, maxMessages?: number): Promise<StorageResult<Handoff>>;
   clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>>;
   stats(): Promise<StorageResult<StorageStats>>;
+  merge(input: MergeInput): Promise<StorageResult<MergeResult>>;
 }
 
 // =============================================================================
@@ -103,13 +124,15 @@ export class LocalStorage implements Storage {
   }
 
   /**
-   * Delete the oldest handoff (FIFO) to make room for new ones
+   * Delete the oldest handoff (FIFO) to make room for new ones.
+   * @param protectedKeys - Optional set of keys to exclude from deletion
    */
-  private deleteOldestHandoff(): string | null {
+  private deleteOldestHandoff(protectedKeys?: Set<string>): string | null {
     let oldestKey: string | null = null;
     let oldestDate: Date | null = null;
 
     for (const [key, handoff] of this.handoffs) {
+      if (protectedKeys?.has(key)) continue;
       const createdAt = new Date(handoff.created_at);
       if (oldestDate === null || createdAt < oldestDate) {
         oldestDate = createdAt;
@@ -286,6 +309,142 @@ export class LocalStorage implements Storage {
   getConfig(): Config {
     return this.config;
   }
+
+  /**
+   * Merge multiple handoffs into a single new handoff.
+   * Combines conversations, summaries, and metadata from source handoffs.
+   * @param input - Merge configuration including source keys and options
+   * @returns Result with merge details or error
+   */
+  async merge(input: MergeInput): Promise<StorageResult<MergeResult>> {
+    // 1. Duplicate key check
+    const keySet = new Set(input.keys);
+    if (keySet.size !== input.keys.length) {
+      return { success: false, error: "Duplicate keys found in merge input" };
+    }
+
+    // 2. Load all handoffs, error if any not found
+    const sources: Handoff[] = [];
+    for (const key of input.keys) {
+      const handoff = this.handoffs.get(key);
+      if (!handoff) {
+        return { success: false, error: `Handoff not found: "${key}"` };
+      }
+      sources.push(handoff);
+    }
+
+    // 3. Sort by strategy
+    const sorted = [...sources];
+    if (input.strategy === "chronological") {
+      sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    }
+    // sequential: keep array order (no sorting needed)
+
+    // 4. Merge conversations with separator
+    const mergedConversation = sorted
+      .map((h) => `<!-- Source: ${h.key} -->\n${h.conversation}`)
+      .join("\n\n---\n\n");
+
+    // 5. Generate or use provided summary
+    let mergedSummary: string;
+    if (input.new_summary) {
+      mergedSummary = input.new_summary;
+    } else {
+      const summaryLines = sorted.map((h) => `- [${h.key}] ${h.summary}`);
+      mergedSummary = summaryLines.join("\n");
+      // Truncate if exceeds limit
+      const maxBytes = this.config.maxSummaryBytes;
+      if (Buffer.byteLength(mergedSummary, "utf8") > maxBytes) {
+        while (Buffer.byteLength(mergedSummary, "utf8") > maxBytes - 3) {
+          mergedSummary = mergedSummary.slice(0, -1);
+        }
+        mergedSummary += "...";
+      }
+    }
+
+    // 6. Merge from_ai / from_project
+    const uniqueAi = [...new Set(sorted.map((h) => h.from_ai))];
+    const mergedFromAi = uniqueAi.length === 1 && uniqueAi[0] ? uniqueAi[0] : uniqueAi.join(", ");
+    const uniqueProject = [...new Set(sorted.map((h) => h.from_project))];
+    const mergedFromProject =
+      uniqueProject.length === 1 && uniqueProject[0] !== undefined
+        ? uniqueProject[0]
+        : uniqueProject.join(", ");
+
+    // 7. Validate merged content
+    const convValidation = validateConversation(mergedConversation, this.config);
+    if (!convValidation.valid) {
+      return { success: false, error: `Merged conversation too large: ${convValidation.error}` };
+    }
+
+    const summaryValidation = validateSummary(mergedSummary, this.config);
+    if (!summaryValidation.valid) {
+      return { success: false, error: `Merged summary too large: ${summaryValidation.error}` };
+    }
+
+    // 8. Determine merged key
+    const mergedKey = input.new_key || generateKey();
+
+    // Validate key format
+    const keyValidation = validateKey(mergedKey, this.config);
+    if (!keyValidation.valid) {
+      return { success: false, error: keyValidation.error };
+    }
+
+    // Check key collision (allow if delete_sources=true and key is a source key)
+    if (this.handoffs.has(mergedKey)) {
+      const isSourceKey = keySet.has(mergedKey);
+      if (!input.delete_sources || !isSourceKey) {
+        return { success: false, error: `Key already exists: "${mergedKey}"` };
+      }
+    }
+
+    // 9. Delete sources if requested (before saving to free capacity)
+    if (input.delete_sources) {
+      for (const key of input.keys) {
+        this.handoffs.delete(key);
+      }
+    }
+
+    // 10. FIFO capacity check for new key (protect source keys when delete_sources=false)
+    const isNewKey = !this.handoffs.has(mergedKey);
+    if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
+      const protectedKeys = input.delete_sources ? new Set<string>() : keySet;
+      this.deleteOldestHandoff(protectedKeys);
+    }
+
+    // Generate or use provided title
+    const mergedTitle = input.new_title || generateTitle(mergedSummary);
+
+    // Validate title
+    const titleValidation = validateTitle(mergedTitle, this.config);
+    if (!titleValidation.valid) {
+      return { success: false, error: titleValidation.error };
+    }
+
+    // Save merged handoff
+    const mergedHandoff: Handoff = {
+      key: mergedKey,
+      title: mergedTitle,
+      from_ai: mergedFromAi,
+      from_project: mergedFromProject,
+      created_at: new Date().toISOString(),
+      summary: mergedSummary,
+      conversation: mergedConversation,
+    };
+
+    this.handoffs.set(mergedKey, mergedHandoff);
+
+    return {
+      success: true,
+      data: {
+        message: `Merged ${input.keys.length} handoffs into "${mergedKey}"`,
+        merged_key: mergedKey,
+        source_count: input.keys.length,
+        deleted_sources: input.delete_sources,
+      },
+    };
+  }
 }
 
 // =============================================================================
@@ -457,6 +616,11 @@ export class RemoteStorage implements Storage {
   /** @inheritdoc */
   async stats(): Promise<StorageResult<StorageStats>> {
     return this.request("GET", "/stats");
+  }
+
+  /** @inheritdoc */
+  async merge(input: MergeInput): Promise<StorageResult<MergeResult>> {
+    return this.request("POST", "/handoff/merge", input);
   }
 }
 

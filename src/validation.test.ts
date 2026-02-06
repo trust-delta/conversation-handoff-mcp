@@ -6,6 +6,7 @@ import {
   validateConversation,
   validateHandoff,
   validateKey,
+  validateMergeInput,
   validateSaveInput,
   validateSummary,
   validateTitle,
@@ -41,6 +42,12 @@ describe("validateKey", () => {
 
   it("should accept valid key", () => {
     expect(validateKey("valid-key_123", testConfig).valid).toBe(true);
+  });
+
+  it("should reject reserved key 'merge'", () => {
+    const result = validateKey("merge", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("reserved");
   });
 });
 
@@ -291,5 +298,85 @@ describe("validateSaveInput", () => {
     const input = { ...validInput, from_project: "" };
     const result = validateSaveInput(input);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe("validateMergeInput", () => {
+  const validMergeInput = {
+    keys: ["key-1", "key-2"],
+    strategy: "chronological",
+    delete_sources: false,
+  };
+
+  it("should accept valid minimal input", () => {
+    const result = validateMergeInput(validMergeInput);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should accept valid input with all optional fields", () => {
+    const result = validateMergeInput({
+      ...validMergeInput,
+      new_key: "merged-key",
+      new_title: "Merged Title",
+      new_summary: "Merged summary",
+    });
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should reject non-object input", () => {
+    expect(validateMergeInput(null).valid).toBe(false);
+    expect(validateMergeInput([]).valid).toBe(false);
+    expect(validateMergeInput("string").valid).toBe(false);
+    expect(validateMergeInput(123).valid).toBe(false);
+  });
+
+  it("should reject keys that is not an array", () => {
+    const result = validateMergeInput({ ...validMergeInput, keys: "not-array" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Field 'keys' must be an array");
+  });
+
+  it("should reject keys with only 1 element", () => {
+    const result = validateMergeInput({ ...validMergeInput, keys: ["only-one"] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Field 'keys' must have at least 2 elements");
+  });
+
+  it("should reject keys with non-string elements", () => {
+    const result = validateMergeInput({ ...validMergeInput, keys: ["valid", 123] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Each element in 'keys' must be a string");
+  });
+
+  it("should reject keys with invalid key format", () => {
+    const result = validateMergeInput({ ...validMergeInput, keys: ["valid-key", "invalid key!"] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Invalid key");
+  });
+
+  it("should reject duplicate keys", () => {
+    const result = validateMergeInput({ ...validMergeInput, keys: ["same-key", "same-key"] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Duplicate keys are not allowed");
+  });
+
+  it("should reject invalid strategy value", () => {
+    const result = validateMergeInput({ ...validMergeInput, strategy: "invalid" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Field 'strategy' must be one of");
+  });
+
+  it("should reject non-boolean delete_sources", () => {
+    const result = validateMergeInput({ ...validMergeInput, delete_sources: "true" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Field 'delete_sources' must be a boolean");
+  });
+
+  it("should reject non-string new_key", () => {
+    const result = validateMergeInput({ ...validMergeInput, new_key: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Field 'new_key' must be a string");
   });
 });

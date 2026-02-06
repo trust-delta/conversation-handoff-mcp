@@ -4,8 +4,13 @@ import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findAvailablePort } from "./autoconnect.js";
-import { LocalStorage, type SaveInput } from "./storage.js";
-import { connectionConfig, defaultConfig, validateSaveInput } from "./validation.js";
+import { LocalStorage, type MergeInput, type SaveInput } from "./storage.js";
+import {
+  connectionConfig,
+  defaultConfig,
+  validateMergeInput,
+  validateSaveInput,
+} from "./validation.js";
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -213,6 +218,36 @@ export class HttpServer {
     }
 
     try {
+      // POST /handoff/merge - Merge handoffs
+      if (method === "POST" && path === "/handoff/:key" && key === "merge") {
+        const body = await this.readBody(req);
+
+        let rawInput: unknown;
+        try {
+          rawInput = JSON.parse(body);
+        } catch {
+          this.sendJson(res, 400, { error: "Invalid JSON in request body" });
+          return;
+        }
+
+        const validation = validateMergeInput(rawInput);
+        if (!validation.valid) {
+          this.sendJson(res, 400, { error: validation.error });
+          return;
+        }
+
+        const mergeInput = rawInput as MergeInput;
+        const result = await this.storage.merge(mergeInput);
+        if (result.success) {
+          this.sendJson(res, 200, result.data);
+        } else if (result.error?.includes("not found")) {
+          this.sendJson(res, 404, { error: result.error });
+        } else {
+          this.sendJson(res, 400, { error: result.error });
+        }
+        return;
+      }
+
       // POST /handoff - Save handoff
       if (method === "POST" && path === "/handoff") {
         const body = await this.readBody(req);

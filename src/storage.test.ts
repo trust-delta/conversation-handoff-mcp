@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LocalStorage,
+  type MergeInput,
   RemoteStorage,
   type SaveInput,
   getStorage,
@@ -252,6 +253,259 @@ describe("LocalStorage", () => {
 
       const result = await storage.stats();
       expect(result.data?.usage.handoffsPercent).toBe(50); // 5 out of 10
+    });
+  });
+
+  describe("merge", () => {
+    const createHandoff = (key: string, overrides?: Partial<SaveInput>): SaveInput => ({
+      ...validInput,
+      key,
+      title: `Title for ${key}`,
+      summary: `Summary for ${key}`,
+      conversation: `## User\nQuestion from ${key}\n\n## Assistant\nAnswer from ${key}`,
+      ...overrides,
+    });
+
+    const baseMergeInput: MergeInput = {
+      keys: ["h1", "h2"],
+      delete_sources: false,
+      strategy: "chronological",
+    };
+
+    it("should merge two handoffs with chronological strategy", async () => {
+      await storage.save(createHandoff("h1"));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+      expect(result.data?.source_count).toBe(2);
+      expect(result.data?.merged_key).toBeDefined();
+
+      const mergedKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(mergedKey);
+      expect(loaded.success).toBe(true);
+      expect(loaded.data?.conversation).toContain("<!-- Source: h1 -->");
+      expect(loaded.data?.conversation).toContain("<!-- Source: h2 -->");
+      expect(loaded.data?.conversation).toContain("---");
+    });
+
+    it("should merge two handoffs with sequential strategy", async () => {
+      // Save h2 first (older), h1 second (newer)
+      await storage.save(createHandoff("h2"));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await storage.save(createHandoff("h1"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        keys: ["h1", "h2"],
+        strategy: "sequential",
+      });
+      expect(result.success).toBe(true);
+
+      const seqKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(seqKey);
+      expect(loaded.success).toBe(true);
+      // Sequential: h1 should come before h2 (array order)
+      const conv = loaded.data?.conversation ?? "";
+      const h1Pos = conv.indexOf("<!-- Source: h1 -->");
+      const h2Pos = conv.indexOf("<!-- Source: h2 -->");
+      expect(h1Pos).toBeLessThan(h2Pos);
+    });
+
+    it("should auto-generate key, title, and summary", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+      expect(result.data?.merged_key).toMatch(/^handoff-/);
+
+      const autoKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(autoKey);
+      expect(loaded.success).toBe(true);
+      expect(loaded.data?.summary).toContain("[h1]");
+      expect(loaded.data?.summary).toContain("[h2]");
+    });
+
+    it("should use custom key, title, and summary when specified", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        new_key: "custom-merged",
+        new_title: "Custom Title",
+        new_summary: "Custom summary",
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.merged_key).toBe("custom-merged");
+
+      const loaded = await storage.load("custom-merged");
+      expect(loaded.success).toBe(true);
+      expect(loaded.data?.title).toBe("Custom Title");
+      expect(loaded.data?.summary).toBe("Custom summary");
+    });
+
+    it("should delete sources when delete_sources is true", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        delete_sources: true,
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.deleted_sources).toBe(true);
+
+      // Source handoffs should be deleted
+      const h1 = await storage.load("h1");
+      expect(h1.success).toBe(false);
+      const h2 = await storage.load("h2");
+      expect(h2.success).toBe(false);
+    });
+
+    it("should keep sources when delete_sources is false", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        delete_sources: false,
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.deleted_sources).toBe(false);
+
+      // Source handoffs should still exist
+      const h1 = await storage.load("h1");
+      expect(h1.success).toBe(true);
+      const h2 = await storage.load("h2");
+      expect(h2.success).toBe(true);
+    });
+
+    it("should error when a key does not exist", async () => {
+      await storage.save(createHandoff("h1"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not found");
+      expect(result.error).toContain("h2");
+    });
+
+    it("should error on duplicate keys", async () => {
+      await storage.save(createHandoff("h1"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        keys: ["h1", "h1"],
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Duplicate keys");
+    });
+
+    it("should error when merged conversation exceeds size limit", async () => {
+      // Create handoffs with large conversations that exceed limit when combined
+      const largeConv = "x".repeat(6000);
+      await storage.save(createHandoff("h1", { conversation: largeConv }));
+      await storage.save(createHandoff("h2", { conversation: largeConv }));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("too large");
+    });
+
+    it("should error when new_key conflicts with existing non-source key", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+      await storage.save(createHandoff("existing-key"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        new_key: "existing-key",
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("already exists");
+    });
+
+    it("should allow new_key that is a source key when delete_sources is true", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        new_key: "h1",
+        delete_sources: true,
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.merged_key).toBe("h1");
+    });
+
+    it("should error when new_key is a source key but delete_sources is false", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge({
+        ...baseMergeInput,
+        new_key: "h1",
+        delete_sources: false,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("already exists");
+    });
+
+    it("should combine from_ai when sources differ", async () => {
+      await storage.save(createHandoff("h1", { from_ai: "claude" }));
+      await storage.save(createHandoff("h2", { from_ai: "chatgpt" }));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const diffKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(diffKey);
+      expect(loaded.data?.from_ai).toContain("claude");
+      expect(loaded.data?.from_ai).toContain("chatgpt");
+    });
+
+    it("should use single from_ai when all sources are the same", async () => {
+      await storage.save(createHandoff("h1", { from_ai: "claude" }));
+      await storage.save(createHandoff("h2", { from_ai: "claude" }));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const sameKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(sameKey);
+      expect(loaded.data?.from_ai).toBe("claude");
+    });
+
+    it("should handle FIFO when at capacity after merge and protect source keys", async () => {
+      // Fill to capacity
+      for (let i = 0; i < testConfig.maxHandoffs; i++) {
+        await storage.save(createHandoff(`fill-${i}`));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      // Merge two (without deleting sources) - should trigger FIFO
+      const result = await storage.merge({
+        keys: ["fill-0", "fill-1"],
+        delete_sources: false,
+        strategy: "sequential",
+      });
+      expect(result.success).toBe(true);
+
+      // Should still be at max capacity
+      const list = await storage.list();
+      expect(list.data?.length).toBe(testConfig.maxHandoffs);
+
+      // Source handoffs should still exist (protected from FIFO)
+      const fill0 = await storage.load("fill-0");
+      expect(fill0.success).toBe(true);
+      const fill1 = await storage.load("fill-1");
+      expect(fill1.success).toBe(true);
+
+      // The oldest non-source handoff (fill-2) should have been deleted
+      const fill2 = await storage.load("fill-2");
+      expect(fill2.success).toBe(false);
     });
   });
 });
