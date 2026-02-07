@@ -140,7 +140,13 @@ function registerTools(server: McpServer): void {
   // handoff_save
   server.tool(
     "handoff_save",
-    "Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.",
+    `Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.
+
+IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversation content.
+- Do NOT summarize or abbreviate any messages
+- Do NOT replace assistant responses with bracketed summaries like "[explained X]"
+- Include ALL code blocks, commands, examples, and explanations exactly as they appeared
+- The 'summary' field is for the brief overview; 'conversation' is for the full unabridged content`,
     {
       key: z
         .string()
@@ -152,10 +158,12 @@ function registerTools(server: McpServer): void {
         .string()
         .optional()
         .describe("Human-readable title for the handoff. Auto-generated from summary if omitted."),
-      summary: z.string().describe("Brief summary of the conversation context"),
+      summary: z.string().describe("Brief summary of the conversation context (2-3 sentences)"),
       conversation: z
         .string()
-        .describe("Full conversation in Markdown format (## User / ## Assistant)"),
+        .describe(
+          "The COMPLETE verbatim conversation in Markdown format (## User / ## Assistant). NEVER summarize or shorten messages. Include all code blocks, commands, and full explanations exactly as they were written. Each message must be reproduced in full."
+        ),
       from_ai: z
         .string()
         .default("claude")

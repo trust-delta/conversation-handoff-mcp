@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Verbatim Conversation Saving (v0.6.1+)**: AI saves complete conversations without summarization or abbreviation
 - **Merge Handoffs (v0.6.0+)**: Combine multiple related handoffs into one unified context
 - **MCP Apps UI (v0.5.0+)**: Interactive UI for browsing and managing handoffs on compatible clients
 - **Auto-Connect (v0.4.0+)**: Server automatically starts in the background - no manual setup required
@@ -89,7 +90,7 @@ MCP configuration:
 
 ### handoff_save
 
-Save conversation context. Key and title are auto-generated if omitted (v0.4.0+).
+Save conversation context. Key and title are auto-generated if omitted (v0.4.0+). The conversation field stores the complete verbatim content — AI is instructed not to summarize or abbreviate messages (v0.6.1+).
 
 ```text
 // With explicit key and title
