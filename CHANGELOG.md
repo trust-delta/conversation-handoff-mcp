@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-11
+
+### Added
+
+- **`--audit` Mode**: Structured JSONL audit logging for development diagnostics
+  - Enable with `--audit` / `-a` flag or `HANDOFF_AUDIT=true` environment variable
+  - Logs to `/tmp/conversation-handoff-mcp/` as JSONL files
+  - Records: tool calls (timing, input sizes), storage events (FIFO deletions, merges), connection events (port scans, server lifecycle), HTTP requests, and periodic performance snapshots (60s)
+  - File rotation: 10MB per file, up to 5 rotated files
+  - Zero overhead when disabled (no-op functions)
+  - New `src/audit.ts` module with `AuditLogger` class
+  - 25 new tests (total: 148)
+
 ## [0.6.1] - 2026-02-08
 
 ### Changed

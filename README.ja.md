@@ -15,6 +15,7 @@ AIチャット間、または同AIの異なるプロジェクト間で会話コ�
 
 ## 特徴
 
+- **監査ログ (v0.7.0+)**: 構造化JSONL形式の診断ログ（`--audit` フラグで有効化）
 - **会話全文保存 (v0.6.1+)**: AIが会話を要約せず、完全な内容をそのまま保存
 - **Handoffマージ (v0.6.0+)**: 複数の関連handoffを1つに統合して一括引き継ぎ
 - **MCP Apps UI (v0.5.0+)**: 対応クライアントでhandoffの閲覧・管理ができるインタラクティブUI
@@ -381,6 +382,7 @@ npx conversation-handoff-mcp --serve --port 3000
 | `HANDOFF_RETRY_COUNT` | 30 | 自動再接続のリトライ回数 |
 | `HANDOFF_RETRY_INTERVAL` | 10000 | 自動再接続の間隔 (ms) |
 | `HANDOFF_SERVER_TTL` | 86400000 (24時間) | サーバー自動終了までの時間 (0で無効) |
+| `HANDOFF_AUDIT` | (無効) | `true` または `1` で監査ログを有効化（`--audit` と同等） |
 
 ### ストレージ制限
 

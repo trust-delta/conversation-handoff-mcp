@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Audit Logging (v0.7.0+)**: Optional structured JSONL logging for diagnostics (`--audit` flag)
 - **Verbatim Conversation Saving (v0.6.1+)**: AI saves complete conversations without summarization or abbreviation
 - **Merge Handoffs (v0.6.0+)**: Combine multiple related handoffs into one unified context
 - **MCP Apps UI (v0.5.0+)**: Interactive UI for browsing and managing handoffs on compatible clients
@@ -380,6 +381,7 @@ Customize behavior via environment variables.
 | `HANDOFF_RETRY_COUNT` | 30 | Auto-reconnect retry count |
 | `HANDOFF_RETRY_INTERVAL` | 10000 | Auto-reconnect interval (ms) |
 | `HANDOFF_SERVER_TTL` | 86400000 (24h) | Server auto-shutdown after inactivity (0 = disabled) |
+| `HANDOFF_AUDIT` | (disabled) | `true` or `1` to enable audit logging (same as `--audit`) |
 
 ### Storage Limits
 
