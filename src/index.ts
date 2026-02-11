@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { getAuditLogger, initAudit } from "./audit.js";
 import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
 import { getStorage } from "./storage.js";
@@ -34,6 +35,7 @@ interface CliArgs {
   serve: boolean;
   port: number;
   help: boolean;
+  audit: boolean;
 }
 
 function parseArgs(): CliArgs {
@@ -42,6 +44,7 @@ function parseArgs(): CliArgs {
     serve: false,
     port: DEFAULT_PORT,
     help: false,
+    audit: process.env.HANDOFF_AUDIT === "true" || process.env.HANDOFF_AUDIT === "1",
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -61,6 +64,8 @@ function parseArgs(): CliArgs {
       }
     } else if (arg === "--help" || arg === "-h") {
       result.help = true;
+    } else if (arg === "--audit" || arg === "-a") {
+      result.audit = true;
     }
   }
 
@@ -77,6 +82,7 @@ Usage:
 Options:
   --serve, -s     Start as HTTP server (shared mode)
   --port, -p      HTTP server port (default: ${DEFAULT_PORT})
+  --audit, -a     Enable audit logging (JSONL to /tmp/conversation-handoff-mcp/)
   --help, -h      Show this help message
 
 Modes:
@@ -124,6 +130,7 @@ Environment Variables:
   HANDOFF_MAX_SUMMARY_BYTES    Max summary size (default: 10KB)
   HANDOFF_MAX_TITLE_LENGTH     Max title length (default: 200)
   HANDOFF_MAX_KEY_LENGTH       Max key length (default: 100)
+  HANDOFF_AUDIT                "true" or "1" to enable audit logging (same as --audit)
 
 Note: Data is stored in memory only. Handoffs are lost when the server stops.
 `);
@@ -171,6 +178,9 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
       from_project: z.string().default("").describe("Name of the source project (optional)"),
     },
     async ({ key, title, summary, conversation, from_ai, from_project }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       // Auto-generate key and title if not provided
       const actualKey = key || generateKey();
       const actualTitle = title || generateTitle(summary);
@@ -183,6 +193,18 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
         conversation,
         from_ai,
         from_project,
+      });
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_save",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+        inputSizes: {
+          conversationBytes: Buffer.byteLength(conversation, "utf-8"),
+          summaryBytes: Buffer.byteLength(summary, "utf-8"),
+        },
       });
 
       if (!result.success) {
@@ -249,8 +271,19 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
       _meta: { ui: { resourceUri: VIEWER_RESOURCE_URI } },
     },
     async (): Promise<CallToolResult> => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       const { storage } = await getStorage();
       const result = await storage.list();
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_list",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
 
       if (!result.success) {
         return {
@@ -283,8 +316,19 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
       max_messages: z.number().optional().describe("Optional: limit number of messages to return"),
     },
     async ({ key, max_messages }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       const { storage } = await getStorage();
       const result = await storage.load(key, max_messages);
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_load",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
 
       if (!result.success || !result.data) {
         return {
@@ -336,8 +380,19 @@ ${handoff.conversation}`,
       key: z.string().optional().describe("Optional: specific handoff key to clear"),
     },
     async ({ key }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       const { storage } = await getStorage();
       const result = await storage.clear(key);
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_clear",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
 
       if (!result.success) {
         return {
@@ -371,8 +426,19 @@ ${handoff.conversation}`,
     "Get storage statistics and current limits. Useful for monitoring usage.",
     {},
     async () => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       const { storage } = await getStorage();
       const result = await storage.stats();
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_stats",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
 
       if (!result.success) {
         return {
@@ -428,6 +494,9 @@ ${handoff.conversation}`,
         ),
     },
     async ({ keys, new_key, new_title, new_summary, delete_sources, strategy }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
       const { storage } = await getStorage();
       const result = await storage.merge({
         keys,
@@ -436,6 +505,14 @@ ${handoff.conversation}`,
         new_summary,
         delete_sources,
         strategy,
+      });
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_merge",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
       });
 
       if (!result.success || !result.data) {
@@ -498,13 +575,28 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // Initialize audit logger (must be first)
+  const audit = await initAudit(args.audit);
+
   // Server mode
   if (args.serve) {
+    audit.logLifecycle({
+      event: "startup",
+      mode: "http",
+      version: VERSION,
+      port: args.port,
+    });
     await startServer(args.port);
     return;
   }
 
   // MCP mode
+  audit.logLifecycle({
+    event: "startup",
+    mode: "mcp",
+    version: VERSION,
+  });
+
   const server = new McpServer({
     name: "conversation-handoff",
     version: VERSION,
@@ -519,6 +611,18 @@ async function main(): Promise<void> {
   // Initialize storage (triggers auto-connect if needed)
   // This ensures the shared server starts immediately on MCP client connection
   await getStorage();
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    audit.logLifecycle({
+      event: "shutdown",
+      mode: "mcp",
+      uptimeSeconds: Math.round(process.uptime()),
+    });
+    await audit.shutdown();
+  };
+  process.on("SIGINT", () => void shutdown());
+  process.on("SIGTERM", () => void shutdown());
 
   console.error("Conversation Handoff MCP server running on stdio");
 }

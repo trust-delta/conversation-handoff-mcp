@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getAuditLogger } from "./audit.js";
 import { type PortRange, connectionConfig, sleep } from "./validation.js";
 
 // =============================================================================
@@ -192,16 +193,35 @@ export interface AutoConnectResult {
  */
 export async function autoConnect(): Promise<AutoConnectResult> {
   const { portRange } = connectionConfig;
+  const audit = getAuditLogger();
+  const timer = audit.startTimer();
 
   // 1. Scan for existing server in port range (parallel scan, no cache)
+  audit.logConnection({
+    event: "scan_start",
+    portCount: portRange.end - portRange.start + 1,
+  });
+
   const existingPort = await scanForServer(portRange);
   if (existingPort !== null) {
+    audit.logConnection({
+      event: "scan_result",
+      durationMs: timer.elapsed(),
+      port: existingPort,
+      success: true,
+    });
     return {
       serverUrl: `http://localhost:${existingPort}`,
       mode: "shared",
       autoStarted: false,
     };
   }
+
+  audit.logConnection({
+    event: "scan_result",
+    durationMs: timer.elapsed(),
+    success: false,
+  });
 
   // 2. Find available port and start server
   const availablePort = await findAvailablePort(portRange);
@@ -215,17 +235,34 @@ export async function autoConnect(): Promise<AutoConnectResult> {
   }
 
   // 3. Start server in background
+  audit.logConnection({
+    event: "server_spawn",
+    port: availablePort,
+  });
   startServerBackground(availablePort);
 
   // 4. Wait for server to be ready
   const serverReady = await waitForServer(availablePort);
   if (serverReady) {
+    audit.logConnection({
+      event: "server_ready",
+      port: availablePort,
+      durationMs: timer.elapsed(),
+      success: true,
+    });
     return {
       serverUrl: `http://localhost:${availablePort}`,
       mode: "shared",
       autoStarted: true,
     };
   }
+
+  audit.logConnection({
+    event: "server_ready",
+    port: availablePort,
+    durationMs: timer.elapsed(),
+    success: false,
+  });
 
   // Server failed to start, fallback to standalone
   return {

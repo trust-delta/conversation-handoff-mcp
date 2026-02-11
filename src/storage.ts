@@ -1,3 +1,4 @@
+import { getAuditLogger } from "./audit.js";
 import { type AutoConnectResult, autoConnect, generateKey, generateTitle } from "./autoconnect.js";
 import {
   connectionConfig,
@@ -157,7 +158,18 @@ export class LocalStorage implements Storage {
     // FIFO: Delete oldest handoff if at capacity (for new keys only)
     const isNewKey = !this.handoffs.has(input.key);
     if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
-      this.deleteOldestHandoff();
+      const deletedKey = this.deleteOldestHandoff();
+      if (deletedKey) {
+        getAuditLogger().logStorage({
+          event: "save",
+          key: input.key,
+          fifoDeleted: true,
+          deletedKey,
+          capacityBefore: this.config.maxHandoffs,
+          capacityAfter: this.handoffs.size,
+          success: true,
+        });
+      }
     }
 
     const validation = validateHandoff(
@@ -435,6 +447,13 @@ export class LocalStorage implements Storage {
 
     this.handoffs.set(mergedKey, mergedHandoff);
 
+    getAuditLogger().logStorage({
+      event: "merge",
+      key: mergedKey,
+      dataSize: Buffer.byteLength(mergedConversation, "utf-8"),
+      success: true,
+    });
+
     return {
       success: true,
       data: {
@@ -508,11 +527,27 @@ export class RemoteStorage implements Storage {
 
     this.reconnectAttempts++;
 
+    getAuditLogger().logConnection({
+      event: "reconnect_attempt",
+      retryCount: this.reconnectAttempts,
+    });
+
     const newUrl = await attemptReconnect();
     if (newUrl) {
       this.serverUrl = newUrl.replace(/\/$/, "");
+      getAuditLogger().logConnection({
+        event: "reconnect_result",
+        success: true,
+        retryCount: this.reconnectAttempts,
+      });
       return true;
     }
+
+    getAuditLogger().logConnection({
+      event: "reconnect_result",
+      success: false,
+      retryCount: this.reconnectAttempts,
+    });
     return false;
   }
 

@@ -3,6 +3,7 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getAuditLogger } from "./audit.js";
 import { findAvailablePort } from "./autoconnect.js";
 import { LocalStorage, type MergeInput, type SaveInput } from "./storage.js";
 import {
@@ -91,6 +92,11 @@ export class HttpServer {
    * Shutdown the server gracefully
    */
   private shutdown(): void {
+    getAuditLogger().logLifecycle({
+      event: "shutdown",
+      mode: "http",
+    });
+
     if (this.ttlCheckInterval) {
       clearInterval(this.ttlCheckInterval);
       this.ttlCheckInterval = null;
@@ -207,6 +213,21 @@ export class HttpServer {
 
     const method = req.method || "GET";
     const { path, key, query } = this.parseRoute(req.url || "/");
+
+    // Audit logging
+    const audit = getAuditLogger();
+    const timer = audit.startTimer();
+    const requestSize = Number.parseInt(req.headers["content-length"] || "0", 10) || 0;
+    res.on("finish", () => {
+      audit.logHttp({
+        event: "request",
+        method,
+        path,
+        statusCode: res.statusCode,
+        durationMs: timer.elapsed(),
+        requestSize,
+      });
+    });
 
     // CORS headers (restricted to localhost/127.0.0.1)
     this.setCorsHeaders(req, res);
@@ -408,6 +429,13 @@ export class HttpServer {
 
         // Start TTL monitoring
         this.startTtlMonitor();
+
+        getAuditLogger().logLifecycle({
+          event: "startup",
+          mode: "http",
+          version: VERSION,
+          port: this.port,
+        });
 
         // biome-ignore lint/style/noNonNullAssertion: server is guaranteed to exist here
         resolve(this.server!);
