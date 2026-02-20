@@ -12,13 +12,13 @@
       --card-bg: #ffffff;
       --card-hover: #e8e8e8;
       --border: #ddd;
-      --muted: #666;
-      --dimmed: #999;
+      --muted: #555;
+      --dimmed: #737373;
       --conv-bg: #f0f0f0;
       --summary: #555;
-      --accent-blue: #2563eb;
-      --accent-green: #059669;
-      --accent-red: #dc2626;
+      --accent-blue: #1d4ed8;
+      --accent-green: #065f46;
+      --accent-red: #b91c1c;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -27,13 +27,13 @@
         --card-bg: #2a2a2a;
         --card-hover: #333;
         --border: #444;
-        --muted: #888;
-        --dimmed: #666;
+        --muted: #999;
+        --dimmed: #949494;
         --conv-bg: #222;
         --summary: #aaa;
-        --accent-blue: #4a9eff;
-        --accent-green: #10b981;
-        --accent-red: #e53935;
+        --accent-blue: #79b8ff;
+        --accent-green: #34d399;
+        --accent-red: #ff9494;
       }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -65,7 +65,7 @@
     .title { font-weight: 500; margin-bottom: 4px; }
     .meta { font-size: 12px; color: var(--muted); }
     .empty { color: var(--dimmed); text-align: center; padding: 32px; }
-    .btn-delete {
+    .btn-card {
       background: transparent;
       border: 1px solid var(--dimmed);
       color: var(--muted);
@@ -77,30 +77,8 @@
       transition: all 0.2s;
     }
     .btn-delete:hover { border-color: var(--accent-red); color: var(--accent-red); }
-    .btn-expand {
-      background: transparent;
-      border: 1px solid var(--dimmed);
-      color: var(--muted);
-      padding: 4px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      flex-shrink: 0;
-      transition: all 0.2s;
-    }
     .btn-expand:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
     .card.expanded .btn-expand { border-color: var(--accent-blue); color: var(--accent-blue); }
-    .btn-load {
-      background: transparent;
-      border: 1px solid var(--dimmed);
-      color: var(--muted);
-      padding: 4px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      flex-shrink: 0;
-      transition: all 0.2s;
-    }
     .btn-load:hover { border-color: var(--accent-green); color: var(--accent-green); }
     .card-actions { display: flex; gap: 6px; }
     .card-details { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
