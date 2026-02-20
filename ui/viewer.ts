@@ -12,7 +12,7 @@ interface HandoffSummary {
   created_at: string;
 }
 
-const app = new App({ name: "Handoff List", version: "0.5.2" });
+const app = new App({ name: "Handoff List", version: "0.7.1" });
 
 // State
 let handoffs: HandoffSummary[] = [];
@@ -61,9 +61,9 @@ function renderList(): void {
             <div class="meta">${escapeHtml(h.from_ai)} | ${formatDate(h.created_at)}</div>
           </div>
           <div class="card-actions">
-            <button class="btn-expand" data-key="${escapeHtml(h.key)}">View</button>
-            <button class="btn-load" data-key="${escapeHtml(h.key)}">Load</button>
-            <button class="btn-delete" data-key="${escapeHtml(h.key)}">Delete</button>
+            <button class="btn-card btn-expand" data-key="${escapeHtml(h.key)}">View</button>
+            <button class="btn-card btn-load" data-key="${escapeHtml(h.key)}">Load</button>
+            <button class="btn-card btn-delete" data-key="${escapeHtml(h.key)}">Delete</button>
           </div>
         </div>
         <div class="card-details">
