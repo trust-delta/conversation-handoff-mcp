@@ -41,6 +41,18 @@ describe("LocalStorage", () => {
       expect(result.data?.message).toContain("Handoff saved");
     });
 
+    it("should return metadata with inputSizes on successful save", async () => {
+      const result = await storage.save(validInput);
+      expect(result.success).toBe(true);
+      expect(result.metadata?.inputSizes).toBeDefined();
+      expect(result.metadata?.inputSizes?.summaryBytes).toBe(
+        Buffer.byteLength(validInput.summary, "utf8")
+      );
+      expect(result.metadata?.inputSizes?.conversationBytes).toBe(
+        Buffer.byteLength(validInput.conversation, "utf8")
+      );
+    });
+
     it("should reject invalid key", async () => {
       const result = await storage.save({ ...validInput, key: "invalid key!" });
       expect(result.success).toBe(false);

@@ -1,6 +1,57 @@
-# conversation-handoff-mcp
+# 開発ルール
 
-AI会話コンテキストを引き継ぐためのMCPサーバー。
+---
+
+## 調査レポートの保存
+
+WebFetchや外部調査を行った際は調査結果を保存する
+調査レポートはテンプレート構造に従う
+
+- テンプレート: ./.claude/research/template.md
+- 保存先: ./.claude/research/YYYY-MM-DD_調査タイトル.md
+
+---
+
+## プロジェクト概要
+
+### 基本情報
+
+- **アプリケーション名**: conversation-handoff-mcp
+- **プロジェクトタイプ**: MCPサーバー（npmパッケージ）
+
+### ミッション
+
+AIチャット間（Claude Desktop ↔ Claude Code 等）や、同AI内の異なるプロジェクト間で会話コンテキストを引き継ぐ。手動コピペなしで、設計議論の文脈を実装作業にシームレスに持ち込める。
+
+### ターゲットユーザー
+
+MCPクライアント（Claude Desktop, Claude Code, Codex CLI, Gemini CLI, Cursor 等）を使うAI開発者。複数のAIセッション間でコンテキストの断絶に課題を感じている人。
+
+### アーキテクチャ図
+
+**実態に合わせて都度更新**
+
+```mermaid
+graph TD
+    A[MCP Client 1<br>Claude Desktop] -->|stdio| B[MCP Server<br>index.ts]
+    C[MCP Client 2<br>Claude Code] -->|stdio| D[MCP Server<br>index.ts]
+    B -->|HTTP| E[Shared HTTP Server<br>server.ts]
+    D -->|HTTP| E
+    E -->|In-Memory| F[Storage<br>storage.ts]
+    B -.->|autoconnect| G[Auto Discovery<br>autoconnect.ts]
+    D -.->|autoconnect| G
+    G -.->|port scan<br>1099-1200| E
+    H[MCP Apps UI<br>viewer.html] -->|callServerTool| B
+```
+
+### ドメイン知識と制約
+
+- MCP（Model Context Protocol）はAIクライアント-サーバー間のstdio通信規約
+- MCP Apps UIは`@modelcontextprotocol/ext-apps`による拡張UIで、対応クライアントでのみ表示
+- ストレージはメモリベース（サーバー終了でデータ消失）。軽量な一時クリップボード設計
+- handoff_loadの出力にはプロンプトインジェクション対策のセキュリティマーカーを含む
+
+---
 
 ## 開発コマンド
 
@@ -10,9 +61,10 @@ npm run dev        # TypeScript watchモード
 npm run test       # テスト実行
 npm run check      # Biome lint + format チェック
 npm run check:fix  # 自動修正
+npm run typecheck  # 型チェック
 ```
 
-## アーキテクチャ
+## ディレクトリ構成
 
 ```
 src/
@@ -33,13 +85,7 @@ ui/
 - `handoff_list`が`registerAppTool`で登録され、対応クライアントでUI表示
 - UIは`ontoolresult`で`structuredContent`からデータを受信
 - `callServerTool({ name: "ツール名", arguments: {} })`でサーバーツール呼び出し可能
-
-## ビルド
-
-UIは`vite-plugin-singlefile`で単一HTMLにバンドル:
-```bash
-npm run build:ui  # → dist/ui/viewer.html
-```
+- UIは`vite-plugin-singlefile`で単一HTMLにバンドル: `npm run build:ui` → `dist/ui/viewer.html`
 
 ## テスト
 

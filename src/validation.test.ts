@@ -70,6 +70,18 @@ describe("validateTitle", () => {
 });
 
 describe("validateSummary", () => {
+  it("should reject empty summary", () => {
+    const result = validateSummary("", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Summary is required");
+  });
+
+  it("should reject whitespace-only summary", () => {
+    const result = validateSummary("   \n\t  ", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Summary is required");
+  });
+
   it("should reject summary that is too large", () => {
     const result = validateSummary("a".repeat(101), testConfig);
     expect(result.valid).toBe(false);
@@ -77,7 +89,9 @@ describe("validateSummary", () => {
   });
 
   it("should accept valid summary", () => {
-    expect(validateSummary("Short summary", testConfig).valid).toBe(true);
+    const result = validateSummary("Short summary", testConfig);
+    expect(result.valid).toBe(true);
+    expect(result.inputSizes?.summaryBytes).toBe(Buffer.byteLength("Short summary", "utf8"));
   });
 
   it("should handle multibyte characters correctly", () => {
@@ -89,6 +103,18 @@ describe("validateSummary", () => {
 });
 
 describe("validateConversation", () => {
+  it("should reject empty conversation", () => {
+    const result = validateConversation("", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Conversation is required");
+  });
+
+  it("should reject whitespace-only conversation", () => {
+    const result = validateConversation("   \n\t  ", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Conversation is required");
+  });
+
   it("should reject conversation that is too large", () => {
     const result = validateConversation("a".repeat(1001), testConfig);
     expect(result.valid).toBe(false);
@@ -96,9 +122,10 @@ describe("validateConversation", () => {
   });
 
   it("should accept valid conversation", () => {
-    expect(validateConversation("## User\nHello\n\n## Assistant\nHi!", testConfig).valid).toBe(
-      true
-    );
+    const conv = "## User\nHello\n\n## Assistant\nHi!";
+    const result = validateConversation(conv, testConfig);
+    expect(result.valid).toBe(true);
+    expect(result.inputSizes?.conversationBytes).toBe(Buffer.byteLength(conv, "utf8"));
   });
 });
 
@@ -129,10 +156,11 @@ describe("validateHandoff", () => {
     // Invalid title
     expect(validateHandoff("key", "", "summary", "conv", 0, false, testConfig).valid).toBe(false);
 
-    // Valid
-    expect(validateHandoff("key", "title", "summary", "conv", 0, false, testConfig).valid).toBe(
-      true
-    );
+    // Valid — should include inputSizes
+    const validResult = validateHandoff("key", "title", "summary", "conv", 0, false, testConfig);
+    expect(validResult.valid).toBe(true);
+    expect(validResult.inputSizes?.summaryBytes).toBe(Buffer.byteLength("summary", "utf8"));
+    expect(validResult.inputSizes?.conversationBytes).toBe(Buffer.byteLength("conv", "utf8"));
   });
 });
 

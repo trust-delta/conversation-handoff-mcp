@@ -10,7 +10,13 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type {
+  CallToolResult,
+  ReadResourceResult,
+  ServerNotification,
+  ServerRequest,
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getAuditLogger, initAudit } from "./audit.js";
 import { generateKey, generateTitle } from "./autoconnect.js";
@@ -137,6 +143,36 @@ Note: Data is stored in memory only. Handoffs are lost when the server stops.
 }
 
 // =============================================================================
+// Progress Notifications
+// =============================================================================
+
+/** Tool handler extra parameter type */
+type ToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+/**
+ * Send MCP progress notification if client requested it.
+ * No-op if progressToken is not present (client doesn't support/request progress).
+ */
+async function sendProgress(
+  extra: ToolExtra,
+  progress: number,
+  total: number,
+  message: string
+): Promise<void> {
+  const progressToken = extra._meta?.progressToken;
+  if (progressToken === undefined) return;
+  try {
+    await extra.sendNotification({
+      method: "notifications/progress" as const,
+      params: { progressToken, progress, total, message },
+    });
+  } catch {
+    // Progress notifications are best-effort; ignore failures
+    // (e.g., client disconnect should not break the tool operation)
+  }
+}
+
+// =============================================================================
 // MCP Server Setup
 // =============================================================================
 
@@ -149,11 +185,29 @@ function registerTools(server: McpServer): void {
     "handoff_save",
     `Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.
 
-IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversation content.
-- Do NOT summarize or abbreviate any messages
-- Do NOT replace assistant responses with bracketed summaries like "[explained X]"
-- Include ALL code blocks, commands, examples, and explanations exactly as they appeared
-- The 'summary' field is for the brief overview; 'conversation' is for the full unabridged content`,
+## Format Selection
+- **structured** (default): Organize content using the template below. Much faster — reduces output tokens to ~5-20% of the original conversation. Best for most handoffs.
+- **verbatim**: Save the complete word-for-word conversation. Use only when exact wording matters (e.g., legal text, precise error messages).
+
+## Structured Template (for format="structured")
+\`\`\`
+## Key Decisions
+- [Decision]: [Rationale]
+
+## Implementation Details
+[What was built/changed, with relevant code snippets]
+
+## Code Changes
+[Files modified with brief description]
+
+## Open Issues
+- [Issue]: [Status/Context]
+
+## Next Steps
+- [ ] Action item
+\`\`\`
+
+Omit sections that don't apply. Add custom sections if needed.`,
     {
       key: z
         .string()
@@ -165,11 +219,17 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
         .string()
         .optional()
         .describe("Human-readable title for the handoff. Auto-generated from summary if omitted."),
+      format: z
+        .enum(["structured", "verbatim"])
+        .default("structured")
+        .describe(
+          "Output format. 'structured' (default): organized template - faster. 'verbatim': complete word-for-word conversation."
+        ),
       summary: z.string().describe("Brief summary of the conversation context (2-3 sentences)"),
       conversation: z
         .string()
         .describe(
-          "The COMPLETE verbatim conversation in Markdown format (## User / ## Assistant). NEVER summarize or shorten messages. Include all code blocks, commands, and full explanations exactly as they were written. Each message must be reproduced in full."
+          "The conversation content. For format='structured': use the structured template above. For format='verbatim': the COMPLETE verbatim conversation in Markdown format (## User / ## Assistant) — NEVER summarize or shorten messages."
         ),
       from_ai: z
         .string()
@@ -177,15 +237,24 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
         .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
       from_project: z.string().default("").describe("Name of the source project (optional)"),
     },
-    async ({ key, title, summary, conversation, from_ai, from_project }) => {
+    async (
+      { key, title, format: _format, summary, conversation, from_ai, from_project },
+      extra
+    ) => {
       const audit = getAuditLogger();
       const timer = audit.startTimer();
+      const totalSteps = 3;
+
+      await sendProgress(extra, 1, totalSteps, "Connecting to storage...");
 
       // Auto-generate key and title if not provided
       const actualKey = key || generateKey();
       const actualTitle = title || generateTitle(summary);
 
       const { storage } = await getStorage();
+
+      await sendProgress(extra, 2, totalSteps, "Saving handoff...");
+
       const result = await storage.save({
         key: actualKey,
         title: actualTitle,
@@ -195,16 +264,24 @@ IMPORTANT: The 'conversation' field must contain the COMPLETE, VERBATIM conversa
         from_project,
       });
 
+      if (result.success) {
+        await sendProgress(extra, 3, totalSteps, "Complete");
+      }
+
+      // Use pre-calculated sizes from validation when available (LocalStorage),
+      // fall back to recalculation for RemoteStorage
+      const inputSizes = result.metadata?.inputSizes ?? {
+        conversationBytes: Buffer.byteLength(conversation, "utf-8"),
+        summaryBytes: Buffer.byteLength(summary, "utf-8"),
+      };
+
       audit.logTool({
         event: "tool_call",
         toolName: "handoff_save",
         durationMs: timer.elapsed(),
         success: result.success,
         error: result.error,
-        inputSizes: {
-          conversationBytes: Buffer.byteLength(conversation, "utf-8"),
-          summaryBytes: Buffer.byteLength(summary, "utf-8"),
-        },
+        inputSizes,
       });
 
       if (!result.success) {
@@ -493,11 +570,17 @@ ${handoff.conversation}`,
           "Merge strategy: 'chronological' sorts by creation time, 'sequential' keeps array order"
         ),
     },
-    async ({ keys, new_key, new_title, new_summary, delete_sources, strategy }) => {
+    async ({ keys, new_key, new_title, new_summary, delete_sources, strategy }, extra) => {
       const audit = getAuditLogger();
       const timer = audit.startTimer();
+      const totalSteps = 3;
+
+      await sendProgress(extra, 1, totalSteps, "Connecting to storage...");
 
       const { storage } = await getStorage();
+
+      await sendProgress(extra, 2, totalSteps, `Merging ${keys.length} handoffs...`);
+
       const result = await storage.merge({
         keys,
         new_key,
@@ -506,6 +589,10 @@ ${handoff.conversation}`,
         delete_sources,
         strategy,
       });
+
+      if (result.success) {
+        await sendProgress(extra, 3, totalSteps, "Complete");
+      }
 
       audit.logTool({
         event: "tool_call",

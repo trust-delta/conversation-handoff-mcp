@@ -57,9 +57,17 @@ export const defaultConfig: Config = {
 // Validation
 // =============================================================================
 
+/** Byte sizes calculated during validation (avoids redundant Buffer.byteLength calls) */
+export interface InputSizes {
+  summaryBytes?: number;
+  conversationBytes?: number;
+}
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;
+  /** Pre-calculated byte sizes from validation (only present when valid) */
+  inputSizes?: InputSizes;
 }
 
 /** Reserved keys that conflict with API route paths */
@@ -95,6 +103,9 @@ export function validateTitle(title: string, config: Config = defaultConfig): Va
 }
 
 export function validateSummary(summary: string, config: Config = defaultConfig): ValidationResult {
+  if (!summary || summary.trim().length === 0) {
+    return { valid: false, error: "Summary is required" };
+  }
   const summaryBytes = Buffer.byteLength(summary, "utf8");
   if (summaryBytes > config.maxSummaryBytes) {
     return {
@@ -102,13 +113,16 @@ export function validateSummary(summary: string, config: Config = defaultConfig)
       error: `Summary exceeds maximum size (${config.maxSummaryBytes} bytes)`,
     };
   }
-  return { valid: true };
+  return { valid: true, inputSizes: { summaryBytes } };
 }
 
 export function validateConversation(
   conversation: string,
   config: Config = defaultConfig
 ): ValidationResult {
+  if (!conversation || conversation.trim().length === 0) {
+    return { valid: false, error: "Conversation is required" };
+  }
   const conversationBytes = Buffer.byteLength(conversation, "utf8");
   if (conversationBytes > config.maxConversationBytes) {
     return {
@@ -116,7 +130,7 @@ export function validateConversation(
       error: `Conversation exceeds maximum size (${config.maxConversationBytes} bytes)`,
     };
   }
-  return { valid: true };
+  return { valid: true, inputSizes: { conversationBytes } };
 }
 
 export function validateHandoff(
@@ -145,7 +159,13 @@ export function validateHandoff(
     return { valid: false, error: `Maximum number of handoffs reached (${config.maxHandoffs})` };
   }
 
-  return { valid: true };
+  return {
+    valid: true,
+    inputSizes: {
+      summaryBytes: summaryResult.inputSizes?.summaryBytes,
+      conversationBytes: conversationResult.inputSizes?.conversationBytes,
+    },
+  };
 }
 
 // =============================================================================
