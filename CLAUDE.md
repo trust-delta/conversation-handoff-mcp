@@ -54,6 +54,6 @@ npm run test:coverage  # カバレッジ
 1. `package.json`のバージョン更新
 2. `CHANGELOG.md`更新
 3. `README.md` / `README.ja.md`更新（新機能の説明追加）
-4. `develop` → `main`へPR作成・マージ
+4. feature branch → `main`へPR作成・マージ
 5. `npm publish`
 6. [Glama.ai](https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp)で「Sync server」を実行（自動更新されないため）

@@ -26,7 +26,7 @@ npm run build
 ## Pull Request Process
 
 1. Fork the repository
-2. Create a feature branch from `develop`
+2. Create a feature branch from `main`
 3. Make your changes
 4. Ensure all checks pass:
 
@@ -37,7 +37,7 @@ npm run build
    npm run build
    ```
 
-5. Submit a PR to the `develop` branch
+5. Submit a PR to the `main` branch
 
 ## Code Style
 
