@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-22
+
+### Added
+
+- **`format` Parameter for `handoff_save`**: Choose between structured and verbatim conversation saving
+  - `"structured"` (default): Organized template format — reduces AI output tokens to ~5-20% of the original conversation, significantly faster
+  - `"verbatim"`: Complete word-for-word conversation saving for cases where exact wording matters
+  - Structured template includes sections: Key Decisions, Implementation Details, Code Changes, Open Issues, Next Steps
+  - Server-side processing unchanged — `format` guides AI generation behavior only
+- **MCP Progress Notifications**: `handoff_save` and `handoff_merge` now send progress updates via `notifications/progress`
+  - Clients that support `progressToken` will see step-by-step progress (connecting, saving/merging, complete)
+  - No-op for clients that don't request progress — fully backward compatible
+
+### Changed
+
+- **`Buffer.byteLength` Deduplication**: Eliminated redundant byte size calculations in save flow
+  - `ValidationResult` now carries pre-calculated `inputSizes` (summaryBytes, conversationBytes)
+  - `StorageResult` passes validation metadata through to callers
+  - Audit logging reuses validation sizes instead of recalculating (falls back to recalculation for RemoteStorage)
+- **CLAUDE.md**: Updated project documentation with architecture diagram, domain knowledge, and directory structure
+
 ## [0.7.1] - 2026-02-20
 
 ### Added

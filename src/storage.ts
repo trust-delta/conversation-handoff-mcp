@@ -12,7 +12,7 @@ import {
   validateSummary,
   validateTitle,
 } from "./validation.js";
-import type { Config } from "./validation.js";
+import type { Config, InputSizes } from "./validation.js";
 
 // =============================================================================
 // Types
@@ -88,6 +88,8 @@ export interface StorageResult<T> {
   suggestion?: string;
   /** Content that failed to save (for manual recovery) */
   pendingContent?: SaveInput;
+  /** Metadata from validation (e.g., pre-calculated byte sizes) */
+  metadata?: { inputSizes?: InputSizes };
 }
 
 // =============================================================================
@@ -201,6 +203,7 @@ export class LocalStorage implements Storage {
     return {
       success: true,
       data: { message: `Handoff saved: "${input.title}" (key: ${input.key})` },
+      metadata: validation.inputSizes ? { inputSizes: validation.inputSizes } : undefined,
     };
   }
 
