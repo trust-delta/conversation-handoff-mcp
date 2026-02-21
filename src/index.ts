@@ -161,10 +161,15 @@ async function sendProgress(
 ): Promise<void> {
   const progressToken = extra._meta?.progressToken;
   if (progressToken === undefined) return;
-  await extra.sendNotification({
-    method: "notifications/progress" as const,
-    params: { progressToken, progress, total, message },
-  });
+  try {
+    await extra.sendNotification({
+      method: "notifications/progress" as const,
+      params: { progressToken, progress, total, message },
+    });
+  } catch {
+    // Progress notifications are best-effort; ignore failures
+    // (e.g., client disconnect should not break the tool operation)
+  }
 }
 
 // =============================================================================
@@ -259,7 +264,9 @@ Omit sections that don't apply. Add custom sections if needed.`,
         from_project,
       });
 
-      await sendProgress(extra, 3, totalSteps, "Complete");
+      if (result.success) {
+        await sendProgress(extra, 3, totalSteps, "Complete");
+      }
 
       // Use pre-calculated sizes from validation when available (LocalStorage),
       // fall back to recalculation for RemoteStorage
@@ -583,7 +590,9 @@ ${handoff.conversation}`,
         strategy,
       });
 
-      await sendProgress(extra, 3, totalSteps, "Complete");
+      if (result.success) {
+        await sendProgress(extra, 3, totalSteps, "Complete");
+      }
 
       audit.logTool({
         event: "tool_call",
