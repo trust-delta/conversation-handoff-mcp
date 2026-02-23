@@ -51,7 +51,7 @@ npxで実行するため、事前インストールは不要です。
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -266,7 +266,7 @@ handoffデータは**メモリのみ**に保存されます：
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -279,7 +279,7 @@ handoffデータは**メモリのみ**に保存されます：
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "http://localhost:3000"
       }
@@ -297,7 +297,7 @@ Claude Desktop専用です。Claude Desktopは標準機能では異なるプロ�
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "none"
       }
@@ -401,7 +401,7 @@ npx conversation-handoff-mcp --serve --port 3000
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_MAX_COUNT": "50",
         "HANDOFF_MAX_CONVERSATION_BYTES": "524288"

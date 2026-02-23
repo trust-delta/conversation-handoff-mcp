@@ -1,53 +1,14 @@
-# 開発ルール
+# CLAUDE.md
 
----
-
-## 調査レポートの保存
-
-WebFetchや外部調査を行った際は調査結果を保存する
-調査レポートはテンプレート構造に従う
-
-- テンプレート: ./.claude/research/template.md
-- 保存先: ./.claude/research/YYYY-MM-DD_調査タイトル.md
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
 ## プロジェクト概要
 
-### 基本情報
-
 - **アプリケーション名**: conversation-handoff-mcp
 - **プロジェクトタイプ**: MCPサーバー（npmパッケージ）
-
-### ミッション
-
-AIチャット間（Claude Desktop ↔ Claude Code 等）や、同AI内の異なるプロジェクト間で会話コンテキストを引き継ぐ。手動コピペなしで、設計議論の文脈を実装作業にシームレスに持ち込める。
-
-### ターゲットユーザー
-
-MCPクライアント（Claude Desktop, Claude Code, Codex CLI, Gemini CLI, Cursor 等）を使うAI開発者。複数のAIセッション間でコンテキストの断絶に課題を感じている人。
-
-### アーキテクチャ図
-
-**実態に合わせて都度更新**
-
-```mermaid
-graph TD
-    A[MCP Client 1<br>Claude Desktop] -->|stdio| B[MCP Server<br>index.ts]
-    C[MCP Client 2<br>Claude Code] -->|stdio| D[MCP Server<br>index.ts]
-    B -->|HTTP| E[Shared HTTP Server<br>server.ts]
-    D -->|HTTP| E
-    E -->|In-Memory| F[Storage<br>storage.ts]
-    B -.->|autoconnect| G[Auto Discovery<br>autoconnect.ts]
-    D -.->|autoconnect| G
-    G -.->|port scan<br>1099-1200| E
-    H[MCP Apps UI<br>viewer.html] -->|callServerTool| B
-```
-
-### ドメイン知識と制約
-
-- MCP（Model Context Protocol）はAIクライアント-サーバー間のstdio通信規約
-- MCP Apps UIは`@modelcontextprotocol/ext-apps`による拡張UIで、対応クライアントでのみ表示
+- AIチャット間（Claude Desktop ↔ Claude Code 等）や同AI内の異なるプロジェクト間で会話コンテキストを引き継ぐMCPサーバー
 - ストレージはメモリベース（サーバー終了でデータ消失）。軽量な一時クリップボード設計
 - handoff_loadの出力にはプロンプトインジェクション対策のセキュリティマーカーを含む
 
@@ -56,44 +17,91 @@ graph TD
 ## 開発コマンド
 
 ```bash
-npm run build      # UIビルド + TypeScriptコンパイル
-npm run dev        # TypeScript watchモード
-npm run test       # テスト実行
-npm run check      # Biome lint + format チェック
-npm run check:fix  # 自動修正
-npm run typecheck  # 型チェック
+npm run build        # UIビルド (vite) + TypeScriptコンパイル
+npm run dev          # TypeScript watchモード
+npm run check        # Biome lint + format チェック
+npm run check:fix    # Biome 自動修正
+npm run typecheck    # 型チェック
+
+# テスト (Vitest)
+npm run test                          # 全テスト
+npm run test:watch                    # watchモード
+npm run test:coverage                 # カバレッジ
+npx vitest src/storage.test.ts        # 単一ファイル
+npx vitest -t "should save"           # テスト名でフィルタ
 ```
 
-## ディレクトリ構成
+- pre-commitフック（husky + lint-staged）: `src/**/*.ts`に対し`biome check --write`が自動実行される
 
+---
+
+## コードスタイル
+
+Biome設定（biome.json）:
+
+- インデント: スペース2つ、行幅100文字
+- ダブルクォート、セミコロン必須、ES5トレイリングカンマ
+- `noUnusedVariables` / `noUnusedImports` はエラー
+
+---
+
+## アーキテクチャ
+
+### 全体データフロー
+
+```text
+MCP Client (stdio)
+  → index.ts (ツール登録・Zodスキーマ)
+    → storage.ts の getStorage() → Storage インターフェース
+      → LocalStorage (in-memory Map) ... standalone / HTTP server 内部
+      → RemoteStorage (HTTP client) ... auto-connect / explicit server 指定時
+        → server.ts (HTTPサーバー) → LocalStorage
 ```
-src/
-├── index.ts       # MCPサーバー本体、ツール定義
-├── storage.ts     # LocalStorage / RemoteStorage
-├── server.ts      # HTTPサーバー（共有モード用）
-├── autoconnect.ts # 自動接続・再接続ロジック
-├── validation.ts  # 入力バリデーション
-└── audit.ts       # 構造化監査ログ（--audit モード）
 
-ui/
-├── viewer.html    # MCP Apps UI（エントリポイント）
-└── viewer.ts      # UI実装
-```
+### 起動モード分岐 (src/index.ts)
 
-## MCP Apps UI
+`--serve` フラグで分岐:
 
-- `handoff_list`が`registerAppTool`で登録され、対応クライアントでUI表示
-- UIは`ontoolresult`で`structuredContent`からデータを受信
-- `callServerTool({ name: "ツール名", arguments: {} })`でサーバーツール呼び出し可能
-- UIは`vite-plugin-singlefile`で単一HTMLにバンドル: `npm run build:ui` → `dist/ui/viewer.html`
+- **MCPモード（デフォルト）**: `@modelcontextprotocol/sdk`のStdioServerTransportでMCPサーバーとして起動
+- **HTTPサーバーモード（`--serve`）**: `server.ts`のHTTPサーバーを単独起動
 
-## テスト
+MCPモードでのストレージ選択（`getStorage()`）:
 
-```bash
-npm run test           # 全テスト
-npm run test:watch     # watchモード
-npm run test:coverage  # カバレッジ
-```
+- `HANDOFF_SERVER=none` → LocalStorage（standalone）
+- `HANDOFF_SERVER=<url>` → RemoteStorage（明示的接続）
+- 未指定（デフォルト） → autoconnect.tsでポート1099-1200をスキャン → 見つかればRemoteStorage、なければサーバーを自動起動してRemoteStorage
+
+### Storage Interface パターン (src/storage.ts)
+
+`LocalStorage`と`RemoteStorage`は同一の`Storage`インターフェース（save/list/load/clear/stats/merge）を実装:
+
+- **LocalStorage**: `Map<string, Handoff>`ベース。FIFO自動削除（容量上限時に最古を削除）。シングルトン
+- **RemoteStorage**: HTTPクライアント。接続失敗時に`attemptReconnect()`でポート再スキャン→サーバー再起動。save失敗時は`pendingContent`でデータ復旧可能
+- 全操作は`StorageResult<T>`を返す（success, error?, suggestion?）
+
+### MCP Apps UI (ui/)
+
+- `handoff_list`のみ`registerAppTool`で登録 → 対応クライアントでUI表示
+- `registerAppResource`で`dist/ui/viewer.html`を提供
+- UIビルド: `vite-plugin-singlefile`で単一HTMLにバンドル（`npm run build:ui`）
+- UI内から`callServerTool()`でサーバーツール呼び出し可能
+
+### 監査ログ (src/audit.ts)
+
+`--audit`フラグまたは`HANDOFF_AUDIT=true`で有効化:
+
+- JSONL形式で`/tmp/conversation-handoff-mcp/`に出力
+- カテゴリ: lifecycle, tool, storage, connection, http, validation, performance
+- 10MBでファイルローテーション（最大5世代）
+- 無効時はno-op（オーバーヘッドなし）
+
+### バリデーション (src/validation.ts)
+
+- `HANDOFF_*`環境変数から設定を`parseEnvInt()`で安全にパース（不正値はデフォルトにフォールバック）
+- バリデーション結果に`inputSizes`を含め、後続処理での`Buffer.byteLength`再計算を回避
+- 予約キー: `"merge"`（APIルートと競合するため使用不可）
+
+---
 
 ## リリース
 

@@ -51,7 +51,7 @@ No pre-installation required - runs via npx.
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -265,7 +265,7 @@ The server automatically shuts down after a period of inactivity:
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -278,7 +278,7 @@ The server automatically shuts down after a period of inactivity:
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "http://localhost:3000"
       }
@@ -296,7 +296,7 @@ For Claude Desktop only. Claude Desktop cannot transfer conversations between pr
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "none"
       }
@@ -400,7 +400,7 @@ Customize behavior via environment variables.
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_MAX_COUNT": "50",
         "HANDOFF_MAX_CONVERSATION_BYTES": "524288"
