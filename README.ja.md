@@ -15,6 +15,7 @@ AIチャット間、または同AIの異なるプロジェクト間で会話コ�
 
 ## 特徴
 
+- **サーバー再起動 (v0.9.0+)**: 任意のMCPクライアントから共有サーバーを再起動 — パッケージ更新後に便利
 - **監査ログ (v0.7.0+)**: 構造化JSONL形式の診断ログ（`--audit` フラグで有効化）
 - **会話全文保存 (v0.6.1+)**: AIが会話を要約せず、完全な内容をそのまま保存
 - **Handoffマージ (v0.6.0+)**: 複数の関連handoffを1つに統合して一括引き継ぎ
@@ -51,7 +52,7 @@ npxで実行するため、事前インストールは不要です。
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -266,7 +267,7 @@ handoffデータは**メモリのみ**に保存されます：
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -279,7 +280,7 @@ handoffデータは**メモリのみ**に保存されます：
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "http://localhost:3000"
       }
@@ -297,7 +298,7 @@ Claude Desktop専用です。Claude Desktopは標準機能では異なるプロ�
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "none"
       }
@@ -401,7 +402,7 @@ npx conversation-handoff-mcp --serve --port 3000
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_MAX_COUNT": "50",
         "HANDOFF_MAX_CONVERSATION_BYTES": "524288"

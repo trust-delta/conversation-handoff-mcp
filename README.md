@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Server Restart (v0.9.0+)**: Restart the shared HTTP server from any MCP client — useful after package updates
 - **Audit Logging (v0.7.0+)**: Optional structured JSONL logging for diagnostics (`--audit` flag)
 - **Verbatim Conversation Saving (v0.6.1+)**: AI saves complete conversations without summarization or abbreviation
 - **Merge Handoffs (v0.6.0+)**: Combine multiple related handoffs into one unified context
@@ -51,7 +52,7 @@ No pre-installation required - runs via npx.
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -265,7 +266,7 @@ The server automatically shuts down after a period of inactivity:
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"]
+      "args": ["conversation-handoff-mcp@latest"]
     }
   }
 }
@@ -278,7 +279,7 @@ The server automatically shuts down after a period of inactivity:
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "http://localhost:3000"
       }
@@ -296,7 +297,7 @@ For Claude Desktop only. Claude Desktop cannot transfer conversations between pr
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_SERVER": "none"
       }
@@ -400,7 +401,7 @@ Customize behavior via environment variables.
   "mcpServers": {
     "conversation-handoff": {
       "command": "npx",
-      "args": ["-y", "conversation-handoff-mcp"],
+      "args": ["conversation-handoff-mcp@latest"],
       "env": {
         "HANDOFF_MAX_COUNT": "50",
         "HANDOFF_MAX_CONVERSATION_BYTES": "524288"

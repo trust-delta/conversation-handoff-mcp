@@ -1,5 +1,5 @@
 import type { Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { HttpServer } from "./server.js";
 
 describe("HttpServer", () => {
@@ -197,6 +197,27 @@ describe("HttpServer", () => {
       // by checking we can access it via localhost
       const response = await fetch(`http://127.0.0.1:${testPort}/`);
       expect(response.ok).toBe(true);
+    });
+  });
+
+  // Shutdown test must run last since it closes the server
+  describe("Shutdown endpoint", () => {
+    it("should respond to POST /shutdown with success", async () => {
+      // Mock process.exit to prevent test runner from exiting
+      const mockExit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/shutdown`, {
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as { message: string };
+      expect(data.message).toBe("Server shutting down...");
+
+      // Wait for the setTimeout in shutdown handler to fire
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(mockExit).toHaveBeenCalledWith(0);
+
+      mockExit.mockRestore();
     });
   });
 });

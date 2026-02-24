@@ -21,7 +21,8 @@ import { z } from "zod";
 import { getAuditLogger, initAudit } from "./audit.js";
 import { generateKey, generateTitle } from "./autoconnect.js";
 import { DEFAULT_PORT, startServer } from "./server.js";
-import { getStorage } from "./storage.js";
+import { getStorage, retryAutoConnect } from "./storage.js";
+import { sleep } from "./validation.js";
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -533,6 +534,91 @@ ${handoff.conversation}`,
           {
             type: "text",
             text: JSON.stringify(result.data, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // handoff_restart
+  server.tool(
+    "handoff_restart",
+    "Restart the shared HTTP server. Useful when the server is in an unhealthy state. All stored handoffs will be lost (data is in-memory).",
+    {},
+    async (_, extra) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+      const totalSteps = 3;
+
+      await sendProgress(extra, 1, totalSteps, "Checking server status...");
+
+      const { mode, serverUrl } = await getStorage();
+
+      if (mode === "standalone" || mode === "standalone-explicit") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "❌ Cannot restart: running in standalone mode (no HTTP server).",
+            },
+          ],
+        };
+      }
+
+      if (!serverUrl) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "❌ Cannot restart: no server URL available.",
+            },
+          ],
+        };
+      }
+
+      await sendProgress(extra, 2, totalSteps, "Shutting down server...");
+
+      // Send shutdown request to the server
+      try {
+        await fetch(`${serverUrl}/shutdown`, {
+          method: "POST",
+          signal: AbortSignal.timeout(3000),
+        });
+      } catch {
+        // Connection reset after server exits is expected
+      }
+
+      // Wait for server to fully shut down
+      await sleep(500);
+
+      await sendProgress(extra, 3, totalSteps, "Starting new server...");
+
+      // Restart via retryAutoConnect (resets cache and starts a new server)
+      const result = await retryAutoConnect();
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_restart",
+        durationMs: timer.elapsed(),
+        success: result.mode === "shared",
+      });
+
+      if (result.mode === "shared" && result.serverUrl) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `✅ Server restarted successfully on ${result.serverUrl}\n\nNote: Previous handoff data has been cleared.`,
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: "⚠️ Server was shut down but could not be restarted. Falling back to standalone mode.",
           },
         ],
       };
