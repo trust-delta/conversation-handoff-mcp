@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-02-25
+
+### Added
+
+- **`handoff_restart` Tool**: Restart the shared HTTP server from any MCP client
+  - Sends graceful shutdown request to the running server, then auto-starts a new one
+  - Solves the problem of needing to kill all clients or manually find the process after a package update
+  - Progress notifications during restart (checking → shutting down → starting)
+  - Returns error message when running in standalone mode (no server to restart)
+- `POST /shutdown` HTTP endpoint for graceful server shutdown
+- 1 new test (total: 155)
+
 ## [0.8.0] - 2026-02-22
 
 ### Added

@@ -367,6 +367,14 @@ export class HttpServer {
         return;
       }
 
+      // POST /shutdown - Graceful shutdown
+      if (method === "POST" && path === "/shutdown") {
+        this.sendJson(res, 200, { message: "Server shutting down..." });
+        // Delay shutdown to allow response to be sent
+        setTimeout(() => this.shutdown(), 100);
+        return;
+      }
+
       // GET / - Health check
       if (method === "GET" && path === "/") {
         this.sendJson(res, 200, {
@@ -416,6 +424,7 @@ export class HttpServer {
         console.log("  GET    /handoff/:key  - Load a specific handoff");
         console.log("  DELETE /handoff/:key  - Delete a specific handoff");
         console.log("  DELETE /handoff       - Delete all handoffs");
+        console.log("  POST   /shutdown      - Graceful server shutdown");
         console.log("  GET    /stats         - Get storage statistics");
         console.log("");
         console.log("Note: Data is stored in memory and will be lost when server stops.");

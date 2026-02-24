@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Server Restart (v0.9.0+)**: Restart the shared HTTP server from any MCP client — useful after package updates
 - **Audit Logging (v0.7.0+)**: Optional structured JSONL logging for diagnostics (`--audit` flag)
 - **Verbatim Conversation Saving (v0.6.1+)**: AI saves complete conversations without summarization or abbreviation
 - **Merge Handoffs (v0.6.0+)**: Combine multiple related handoffs into one unified context
