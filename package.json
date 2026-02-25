@@ -57,7 +57,7 @@
     "url": "https://github.com/trust-delta/conversation-handoff-mcp/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.0",
