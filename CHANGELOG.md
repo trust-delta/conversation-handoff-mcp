@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-02-25
+
+### Changed
+
+- **Module refactoring**: Split large source files into focused single-responsibility modules
+  - `index.ts` (803→80 lines) → `cli.ts`, `tools.ts`, `index.ts`
+  - `storage.ts` (783→130 lines) → `types.ts`, `local-storage.ts`, `remote-storage.ts`, `storage.ts`
+  - `validation.ts` (373→250 lines) → `config.ts`, `validation.ts`
+  - Backward compatibility preserved via re-exports (no import changes needed for consumers)
+- `RemoteStorage` reconnection now uses dependency injection (`reconnectFn`) for better testability
+- Updated CLAUDE.md architecture documentation to reflect new file structure
+
 ## [0.9.0] - 2026-02-25
 
 ### Added
