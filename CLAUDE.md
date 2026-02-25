@@ -51,12 +51,33 @@ Biome設定（biome.json）:
 
 ```text
 MCP Client (stdio)
-  → index.ts (ツール登録・Zodスキーマ)
-    → storage.ts の getStorage() → Storage インターフェース
-      → LocalStorage (in-memory Map) ... standalone / HTTP server 内部
-      → RemoteStorage (HTTP client) ... auto-connect / explicit server 指定時
-        → server.ts (HTTPサーバー) → LocalStorage
+  → index.ts (エントリポイント)
+    → cli.ts (CLI引数解析)
+    → tools.ts (ツール登録・Zodスキーマ)
+      → storage.ts の getStorage() → Storage インターフェース
+        → local-storage.ts (in-memory Map) ... standalone / HTTP server 内部
+        → remote-storage.ts (HTTP client) ... auto-connect / explicit server 指定時
+          → server.ts (HTTPサーバー) → LocalStorage
 ```
+
+### ソースファイル構成 (src/)
+
+| ファイル | 役割 |
+|---------|------|
+| `index.ts` | エントリポイント（MCP/HTTPモード分岐） |
+| `cli.ts` | CLI引数解析・ヘルプ表示 |
+| `tools.ts` | MCPツール登録・UIリソース・進捗通知 |
+| `types.ts` | 共有型定義（Handoff, Storage interface等） |
+| `config.ts` | 設定型・環境変数パース・デフォルト値 |
+| `validation.ts` | バリデーション関数・ユーティリティ |
+| `storage.ts` | 動的ストレージプロバイダ・再エクスポート |
+| `local-storage.ts` | LocalStorage（in-memory Map）実装 |
+| `remote-storage.ts` | RemoteStorage（HTTPクライアント）実装 |
+| `autoconnect.ts` | サーバー自動検出・起動 |
+| `server.ts` | HTTPサーバー実装 |
+| `audit.ts` | 監査ログ（JSONL） |
+
+**後方互換性**: `storage.ts`と`validation.ts`は分割先モジュールを再エクスポート。既存のimportはそのまま動作する。
 
 ### 起動モード分岐 (src/index.ts)
 
@@ -71,12 +92,12 @@ MCPモードでのストレージ選択（`getStorage()`）:
 - `HANDOFF_SERVER=<url>` → RemoteStorage（明示的接続）
 - 未指定（デフォルト） → autoconnect.tsでポート1099-1200をスキャン → 見つかればRemoteStorage、なければサーバーを自動起動してRemoteStorage
 
-### Storage Interface パターン (src/storage.ts)
+### Storage Interface パターン
 
 `LocalStorage`と`RemoteStorage`は同一の`Storage`インターフェース（save/list/load/clear/stats/merge）を実装:
 
-- **LocalStorage**: `Map<string, Handoff>`ベース。FIFO自動削除（容量上限時に最古を削除）。シングルトン
-- **RemoteStorage**: HTTPクライアント。接続失敗時に`attemptReconnect()`でポート再スキャン→サーバー再起動。save失敗時は`pendingContent`でデータ復旧可能
+- **LocalStorage** (`local-storage.ts`): `Map<string, Handoff>`ベース。FIFO自動削除（容量上限時に最古を削除）。シングルトン
+- **RemoteStorage** (`remote-storage.ts`): HTTPクライアント。`reconnectFn`による再接続（DI）。save失敗時は`pendingContent`でデータ復旧可能
 - 全操作は`StorageResult<T>`を返す（success, error?, suggestion?）
 
 ### MCP Apps UI (ui/)
@@ -95,19 +116,7 @@ MCPモードでのストレージ選択（`getStorage()`）:
 - 10MBでファイルローテーション（最大5世代）
 - 無効時はno-op（オーバーヘッドなし）
 
-### バリデーション (src/validation.ts)
+### 設定とバリデーション
 
-- `HANDOFF_*`環境変数から設定を`parseEnvInt()`で安全にパース（不正値はデフォルトにフォールバック）
-- バリデーション結果に`inputSizes`を含め、後続処理での`Buffer.byteLength`再計算を回避
-- 予約キー: `"merge"`（APIルートと競合するため使用不可）
-
----
-
-## リリース
-
-1. `package.json`のバージョン更新
-2. `CHANGELOG.md`更新
-3. `README.md` / `README.ja.md`更新（新機能の説明追加）
-4. feature branch → `main`へPR作成・マージ
-5. `npm publish`
-6. [Glama.ai](https://glama.ai/mcp/servers/@trust-delta/conversation-handoff-mcp)で「Sync server」を実行（自動更新されないため）
+- **config.ts**: `HANDOFF_*`環境変数から設定を`parseEnvInt()`で安全にパース（不正値はデフォルトにフォールバック）
+- **validation.ts**: バリデーション結果に`inputSizes`を含め、後続処理での`Buffer.byteLength`再計算を回避。予約キー: `"merge"`（APIルートと競合するため使用不可）

@@ -661,7 +661,9 @@ describe("RemoteStorage", () => {
         });
       });
 
-      const storage = new RemoteStorage("http://localhost:1099");
+      // Provide reconnectFn that returns the same server URL (simulating rediscovery)
+      const mockReconnect = vi.fn().mockResolvedValue("http://localhost:1099");
+      const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
       const result = await storage.list();
 
       // Should succeed after reconnection
@@ -673,7 +675,9 @@ describe("RemoteStorage", () => {
       // All calls fail
       globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 
-      const storage = new RemoteStorage("http://localhost:1099");
+      // Provide reconnectFn that always fails
+      const mockReconnect = vi.fn().mockResolvedValue(null);
+      const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
       const result = await storage.list();
 
       // Should fail after exhausting retries
@@ -712,7 +716,9 @@ describe("RemoteStorage", () => {
         });
       });
 
-      const storage = new RemoteStorage("http://localhost:1099");
+      // Provide reconnectFn that returns the same server URL
+      const mockReconnect = vi.fn().mockResolvedValue("http://localhost:1099");
+      const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
 
       // First request succeeds
       const result1 = await storage.list();
