@@ -132,18 +132,30 @@ export function validateHandoff(
 // HTTP API Input Validation
 // =============================================================================
 
-export interface SaveInputValidation {
-  valid: boolean;
-  error?: string;
-}
+import type { MergeInput, SaveInput } from "./types.js";
+
+/** Validation result for save input with type-safe narrowing */
+export type SaveInputValidationResult =
+  | { valid: true; data: SaveInput }
+  | { valid: false; error: string };
+
+/** Validation result for merge input with type-safe narrowing */
+export type MergeInputValidationResult =
+  | { valid: true; data: MergeInput }
+  | { valid: false; error: string };
+
+/**
+ * @deprecated Use SaveInputValidationResult instead for type-safe narrowing
+ */
+export type SaveInputValidation = SaveInputValidationResult;
 
 /**
  * Validate HTTP API save input.
  * Checks required fields and their types.
  * @param input - Raw input from HTTP request body
- * @returns Validation result with error message if invalid
+ * @returns Validation result with typed data when valid
  */
-export function validateSaveInput(input: unknown): SaveInputValidation {
+export function validateSaveInput(input: unknown): SaveInputValidationResult {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return { valid: false, error: "Request body must be an object" };
   }
@@ -161,7 +173,7 @@ export function validateSaveInput(input: unknown): SaveInputValidation {
     }
   }
 
-  return { valid: true };
+  return { valid: true, data: obj as unknown as SaveInput };
 }
 
 /** Valid merge strategy types */
@@ -174,9 +186,9 @@ const VALID_MERGE_STRATEGIES: readonly MergeStrategy[] = ["chronological", "sequ
  * Validate HTTP API merge input.
  * Checks required fields, types, key validity, and duplicate detection.
  * @param input - Raw input from HTTP request body
- * @returns Validation result with error message if invalid
+ * @returns Validation result with typed data when valid
  */
-export function validateMergeInput(input: unknown): SaveInputValidation {
+export function validateMergeInput(input: unknown): MergeInputValidationResult {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return { valid: false, error: "Request body must be an object" };
   }
@@ -239,7 +251,7 @@ export function validateMergeInput(input: unknown): SaveInputValidation {
     }
   }
 
-  return { valid: true };
+  return { valid: true, data: obj as unknown as MergeInput };
 }
 
 // =============================================================================
