@@ -14,6 +14,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## ブランチ戦略
+
+- **`main` ブランチには直接コミットしない**。必ず feature ブランチで作業すること
+- コード変更を伴うタスクを開始する前に、まずブランチを作成する:
+  ```bash
+  git checkout -b <type>/<description>  # 例: feat/add-auth, fix/timeout-error, test/coverage
+  ```
+- PR は squash merge で `main` にマージする
+- squash merge 後のローカル同期: `git checkout main && git fetch origin && git reset --hard origin/main`
+
+---
+
 ## 開発コマンド
 
 ```bash
