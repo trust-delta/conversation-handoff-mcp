@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-03-02
+
+### Added
+
+- Comprehensive test suites for `config.ts`, `remote-storage.ts`, and enhanced `server.ts` tests
+  - `config.test.ts`: parseEnvInt, parsePortRange edge cases (23 tests)
+  - `remote-storage.test.ts`: retry exhaustion, pendingContent recovery, timeout handling, HTTP routing (17 tests)
+  - `server.test.ts`: TTL auto-shutdown, large payload rejection, edge cases (12 new tests)
+  - 50 new tests (total: 205)
+- `vitest.config.ts` with v8 coverage thresholds (60% minimum)
+
+### Changed
+
+- **Type safety**: Replaced `rawInput as SaveInput` / `rawInput as MergeInput` type assertions with discriminated union validation results (`SaveInputValidationResult` / `MergeInputValidationResult`) for type-safe narrowing
+- **Error messages**: Remote storage errors now include context (network vs timeout, HTTP method/path)
+
 ## [0.9.1] - 2026-02-25
 
 ### Changed

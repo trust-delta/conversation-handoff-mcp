@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAuditLogger } from "./audit.js";
 import { findAvailablePort } from "./autoconnect.js";
-import { LocalStorage, type MergeInput, type SaveInput } from "./storage.js";
+import { LocalStorage } from "./storage.js";
 import {
   connectionConfig,
   defaultConfig,
@@ -257,8 +257,7 @@ export class HttpServer {
           return;
         }
 
-        const mergeInput = rawInput as MergeInput;
-        const result = await this.storage.merge(mergeInput);
+        const result = await this.storage.merge(validation.data);
         if (result.success) {
           this.sendJson(res, 200, result.data);
         } else if (result.error?.includes("not found")) {
@@ -288,8 +287,7 @@ export class HttpServer {
           return;
         }
 
-        const input = rawInput as SaveInput;
-        const result = await this.storage.save(input);
+        const result = await this.storage.save(validation.data);
         if (result.success) {
           this.sendJson(res, 200, result.data);
         } else {
