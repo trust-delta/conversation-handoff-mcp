@@ -124,10 +124,16 @@ export class RemoteStorage implements Storage {
         return this.request(method, path, body, saveInput);
       }
 
+      // Categorize error for better diagnostics
+      const isTimeout = error instanceof DOMException && error.name === "AbortError";
       const message = error instanceof Error ? error.message : "Unknown error";
+      const errorDetail = isTimeout
+        ? `Request timed out after ${connectionConfig.fetchTimeoutMs}ms (${method} ${path})`
+        : `Network error: ${message} (${method} ${path})`;
+
       const result: StorageResult<T> = {
         success: false,
-        error: `Failed to connect to server: ${message}`,
+        error: `Failed to connect to server: ${errorDetail}`,
         suggestion: "Would you like to output the handoff content for manual recovery?",
       };
 
@@ -156,7 +162,11 @@ export class RemoteStorage implements Storage {
     }
 
     if (!response.ok) {
-      return { success: false, error: data.error || `HTTP ${response.status}` };
+      const statusText = response.status >= 500 ? "Server error" : "Request error";
+      return {
+        success: false,
+        error: data.error || `${statusText}: HTTP ${response.status} (${method} ${path})`,
+      };
     }
 
     return { success: true, data };

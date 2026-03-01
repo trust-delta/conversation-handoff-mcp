@@ -626,7 +626,7 @@ describe("RemoteStorage", () => {
       const result = await storage.list();
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe("HTTP 500");
+      expect(result.error).toContain("HTTP 500");
     });
   });
 
