@@ -266,6 +266,11 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Generate a compact timestamp string (YYYYMMDDHHMMSS) from a Date */
+export function compactTimestamp(date: Date): string {
+  return date.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+}
+
 /** Format byte count to human-readable string */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -286,7 +291,7 @@ export function formatBytes(bytes: number): string {
  * Also supports alternative role names: Human, Claude, AI
  */
 const MESSAGE_DELIMITER =
-  /(?=(?:^|\n)(?:#{1,3}\s+|\*\*)?(?:User|Assistant|Human|Claude|AI)(?:\*\*)?(?::|(?=\s*\n)))/gi;
+  /(?=(?:^|\n)(?:#{1,3}\s+|\*\*)?(?:User|Assistant|Human|Claude|AI)(?:\*\*)?(?::|(?=\s*\n)))/i;
 
 /**
  * Split a conversation string into individual messages.
@@ -295,9 +300,6 @@ const MESSAGE_DELIMITER =
  * @returns Array of message strings
  */
 export function splitConversationMessages(conversation: string): string[] {
-  // Reset regex state (global flag)
-  MESSAGE_DELIMITER.lastIndex = 0;
-
   const messages = conversation.split(MESSAGE_DELIMITER).filter((msg) => msg.trim().length > 0);
 
   // If no delimiters found, return the whole conversation as one message

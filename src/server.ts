@@ -203,6 +203,20 @@ export class HttpServer {
   }
 
   /**
+   * Read, parse, and validate JSON from a request body.
+   * Sends a 400 response on parse failure and returns null.
+   */
+  private async parseJsonBody(req: IncomingMessage, res: ServerResponse): Promise<unknown | null> {
+    const body = await this.readBody(req);
+    try {
+      return JSON.parse(body);
+    } catch {
+      this.sendJson(res, 400, { error: "Invalid JSON in request body" });
+      return null;
+    }
+  }
+
+  /**
    * Handle incoming HTTP request and route to appropriate handler.
    * @param req - HTTP request object
    * @param res - HTTP response object
@@ -241,15 +255,8 @@ export class HttpServer {
     try {
       // POST /handoff/merge - Merge handoffs
       if (method === "POST" && path === "/handoff/:key" && key === "merge") {
-        const body = await this.readBody(req);
-
-        let rawInput: unknown;
-        try {
-          rawInput = JSON.parse(body);
-        } catch {
-          this.sendJson(res, 400, { error: "Invalid JSON in request body" });
-          return;
-        }
+        const rawInput = await this.parseJsonBody(req, res);
+        if (rawInput === null) return;
 
         const validation = validateMergeInput(rawInput);
         if (!validation.valid) {
@@ -270,15 +277,8 @@ export class HttpServer {
 
       // POST /handoff - Save handoff
       if (method === "POST" && path === "/handoff") {
-        const body = await this.readBody(req);
-
-        let rawInput: unknown;
-        try {
-          rawInput = JSON.parse(body);
-        } catch {
-          this.sendJson(res, 400, { error: "Invalid JSON in request body" });
-          return;
-        }
+        const rawInput = await this.parseJsonBody(req, res);
+        if (rawInput === null) return;
 
         // Validate input structure
         const validation = validateSaveInput(rawInput);
