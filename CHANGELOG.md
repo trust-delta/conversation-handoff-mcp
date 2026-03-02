@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-03-02
+
+### Changed
+
+- **Performance**: Replace O(n²) merge summary truncation loop with byte-ratio estimation for fast truncation of large strings
+- **Performance**: Add incremental byte-size cache to `stats()`, avoiding full recalculation on every call
+- **Performance**: Use ISO 8601 string comparison in FIFO deletion instead of `new Date()` parsing
+- **Refactor**: Extract `parseJsonBody()` helper in HTTP server, removing duplicate JSON parsing code
+- **Refactor**: Remove global flag from `MESSAGE_DELIMITER` regex, eliminating stateful `lastIndex` management
+- **Refactor**: Extract shared `compactTimestamp()` utility used by autoconnect and audit modules
+
 ## [0.9.2] - 2026-03-02
 
 ### Added
