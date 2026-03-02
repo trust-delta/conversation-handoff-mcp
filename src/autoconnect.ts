@@ -4,7 +4,7 @@ import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAuditLogger } from "./audit.js";
-import { type PortRange, connectionConfig, sleep } from "./validation.js";
+import { type PortRange, compactTimestamp, connectionConfig, sleep } from "./validation.js";
 
 // =============================================================================
 // Types
@@ -283,8 +283,7 @@ export async function autoConnect(): Promise<AutoConnectResult> {
  * @returns Unique key string
  */
 export function generateKey(): string {
-  const now = new Date();
-  const timestamp = now.toISOString().replace(/[-:T]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
+  const timestamp = compactTimestamp(new Date());
   const random = randomUUID().replace(/-/g, "").slice(0, 8);
   return `handoff-${timestamp}-${random}`;
 }

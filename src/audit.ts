@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { compactTimestamp } from "./validation.js";
 
 // =============================================================================
 // Types
@@ -270,8 +271,7 @@ export class AuditLogger {
 
     await mkdir(this.auditDir, { recursive: true });
 
-    const now = new Date();
-    const ts = now.toISOString().replace(/[-:T]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
+    const ts = compactTimestamp(new Date());
     const filename = `audit-${ts}-${this.sessionId}.jsonl`;
     const filePath = join(this.auditDir, filename);
 

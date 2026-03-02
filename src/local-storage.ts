@@ -34,6 +34,8 @@ import {
 export class LocalStorage implements Storage {
   private handoffs = new Map<string, Handoff>();
   private config: Config;
+  /** Cached total byte size of all handoffs (updated incrementally) */
+  private cachedTotalBytes = 0;
 
   /**
    * Create a new LocalStorage instance.
@@ -43,24 +45,36 @@ export class LocalStorage implements Storage {
     this.config = config;
   }
 
+  /** Calculate the total byte size of a handoff entry */
+  private handoffBytes(h: Handoff): number {
+    return (
+      Buffer.byteLength(h.conversation, "utf8") +
+      Buffer.byteLength(h.summary, "utf8") +
+      Buffer.byteLength(h.title, "utf8") +
+      Buffer.byteLength(h.key, "utf8")
+    );
+  }
+
   /**
    * Delete the oldest handoff (FIFO) to make room for new ones.
    * @param protectedKeys - Optional set of keys to exclude from deletion
    */
   private deleteOldestHandoff(protectedKeys?: Set<string>): string | null {
     let oldestKey: string | null = null;
-    let oldestDate: Date | null = null;
+    let oldestTimestamp: string | null = null;
 
     for (const [key, handoff] of this.handoffs) {
       if (protectedKeys?.has(key)) continue;
-      const createdAt = new Date(handoff.created_at);
-      if (oldestDate === null || createdAt < oldestDate) {
-        oldestDate = createdAt;
+      // ISO 8601 strings are lexicographically comparable (no Date parsing needed)
+      if (oldestTimestamp === null || handoff.created_at < oldestTimestamp) {
+        oldestTimestamp = handoff.created_at;
         oldestKey = key;
       }
     }
 
     if (oldestKey) {
+      const deleted = this.handoffs.get(oldestKey);
+      if (deleted) this.cachedTotalBytes -= this.handoffBytes(deleted);
       this.handoffs.delete(oldestKey);
     }
 
@@ -105,6 +119,10 @@ export class LocalStorage implements Storage {
       return { success: false, error: validation.error };
     }
 
+    // Subtract old bytes if overwriting existing key
+    const existing = this.handoffs.get(input.key);
+    if (existing) this.cachedTotalBytes -= this.handoffBytes(existing);
+
     const handoff: Handoff = {
       key: input.key,
       title: input.title,
@@ -116,6 +134,7 @@ export class LocalStorage implements Storage {
     };
 
     this.handoffs.set(input.key, handoff);
+    this.cachedTotalBytes += this.handoffBytes(handoff);
 
     return {
       success: true,
@@ -179,7 +198,9 @@ export class LocalStorage implements Storage {
    */
   async clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>> {
     if (key) {
-      if (this.handoffs.has(key)) {
+      const existing = this.handoffs.get(key);
+      if (existing) {
+        this.cachedTotalBytes -= this.handoffBytes(existing);
         this.handoffs.delete(key);
         return { success: true, data: { message: `Handoff cleared: "${key}"` } };
       }
@@ -188,6 +209,7 @@ export class LocalStorage implements Storage {
 
     const count = this.handoffs.size;
     this.handoffs.clear();
+    this.cachedTotalBytes = 0;
     return { success: true, data: { message: "All handoffs cleared", count } };
   }
 
@@ -196,21 +218,13 @@ export class LocalStorage implements Storage {
    * @returns Result with storage stats
    */
   async stats(): Promise<StorageResult<StorageStats>> {
-    let totalBytes = 0;
-    for (const h of this.handoffs.values()) {
-      totalBytes += Buffer.byteLength(h.conversation, "utf8");
-      totalBytes += Buffer.byteLength(h.summary, "utf8");
-      totalBytes += Buffer.byteLength(h.title, "utf8");
-      totalBytes += Buffer.byteLength(h.key, "utf8");
-    }
-
     return {
       success: true,
       data: {
         current: {
           handoffs: this.handoffs.size,
-          totalBytes,
-          totalBytesFormatted: formatBytes(totalBytes),
+          totalBytes: this.cachedTotalBytes,
+          totalBytesFormatted: formatBytes(this.cachedTotalBytes),
         },
         limits: {
           maxHandoffs: this.config.maxHandoffs,
@@ -284,11 +298,17 @@ export class LocalStorage implements Storage {
     } else {
       const summaryLines = sorted.map((h) => `- [${h.key}] ${h.summary}`);
       mergedSummary = summaryLines.join("\n");
-      // Truncate if exceeds limit
+      // Truncate if exceeds limit (estimate target length to avoid O(n²) loop)
       const maxBytes = this.config.maxSummaryBytes;
-      if (Buffer.byteLength(mergedSummary, "utf8") > maxBytes) {
+      const currentBytes = Buffer.byteLength(mergedSummary, "utf8");
+      if (currentBytes > maxBytes) {
+        const ratio = (maxBytes - 3) / currentBytes;
+        let targetLen = Math.floor(mergedSummary.length * ratio);
+        mergedSummary = mergedSummary.slice(0, targetLen);
+        // Fine-tune: trim at most a few chars for multi-byte boundary
         while (Buffer.byteLength(mergedSummary, "utf8") > maxBytes - 3) {
-          mergedSummary = mergedSummary.slice(0, -1);
+          targetLen--;
+          mergedSummary = mergedSummary.slice(0, targetLen);
         }
         mergedSummary += "...";
       }
@@ -334,6 +354,8 @@ export class LocalStorage implements Storage {
     // 9. Delete sources if requested (before saving to free capacity)
     if (input.delete_sources) {
       for (const key of input.keys) {
+        const src = this.handoffs.get(key);
+        if (src) this.cachedTotalBytes -= this.handoffBytes(src);
         this.handoffs.delete(key);
       }
     }
@@ -354,6 +376,10 @@ export class LocalStorage implements Storage {
       return { success: false, error: titleValidation.error };
     }
 
+    // Subtract old bytes if overwriting existing key
+    const existingMergeTarget = this.handoffs.get(mergedKey);
+    if (existingMergeTarget) this.cachedTotalBytes -= this.handoffBytes(existingMergeTarget);
+
     // Save merged handoff
     const mergedHandoff: Handoff = {
       key: mergedKey,
@@ -366,6 +392,7 @@ export class LocalStorage implements Storage {
     };
 
     this.handoffs.set(mergedKey, mergedHandoff);
+    this.cachedTotalBytes += this.handoffBytes(mergedHandoff);
 
     getAuditLogger().logStorage({
       event: "merge",
