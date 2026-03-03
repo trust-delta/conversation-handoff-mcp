@@ -3,6 +3,7 @@ import {
   type Config,
   formatBytes,
   splitConversationMessages,
+  validateAddCommentInput,
   validateConversation,
   validateHandoff,
   validateKey,
@@ -19,6 +20,9 @@ const testConfig: Config = {
   maxTitleLength: 50,
   maxKeyLength: 20,
   keyPattern: /^[a-zA-Z0-9_-]+$/,
+  maxCommentBytes: 10000,
+  maxCommentsPerHandoff: 50,
+  maxCommentAuthorLength: 100,
 };
 
 describe("validateKey", () => {
@@ -406,5 +410,86 @@ describe("validateMergeInput", () => {
     const result = validateMergeInput({ ...validMergeInput, new_key: 123 });
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Field 'new_key' must be a string");
+  });
+});
+
+describe("validateAddCommentInput", () => {
+  it("should accept valid input with content only", () => {
+    const result = validateAddCommentInput({ content: "A comment" });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.content).toBe("A comment");
+      expect(result.data.author).toBe("anonymous");
+    }
+  });
+
+  it("should accept valid input with author", () => {
+    const result = validateAddCommentInput({ content: "A comment", author: "user1" });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.author).toBe("user1");
+    }
+  });
+
+  it("should default to anonymous for empty author", () => {
+    const result = validateAddCommentInput({ content: "A comment", author: "  " });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.author).toBe("anonymous");
+    }
+  });
+
+  it("should reject non-object input", () => {
+    expect(validateAddCommentInput(null).valid).toBe(false);
+    expect(validateAddCommentInput([]).valid).toBe(false);
+    expect(validateAddCommentInput("string").valid).toBe(false);
+  });
+
+  it("should reject missing content", () => {
+    const result = validateAddCommentInput({});
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Missing required field: content");
+    }
+  });
+
+  it("should reject non-string content", () => {
+    const result = validateAddCommentInput({ content: 123 });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Field 'content' must be a string");
+    }
+  });
+
+  it("should reject empty content", () => {
+    const result = validateAddCommentInput({ content: "  " });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Comment content cannot be empty");
+    }
+  });
+
+  it("should reject non-string author", () => {
+    const result = validateAddCommentInput({ content: "text", author: 123 });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Field 'author' must be a string");
+    }
+  });
+
+  it("should reject oversized content", () => {
+    const result = validateAddCommentInput({ content: "x".repeat(10001) });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain("exceeds maximum size");
+    }
+  });
+
+  it("should reject oversized author", () => {
+    const result = validateAddCommentInput({ content: "text", author: "x".repeat(101) });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain("exceeds maximum length");
+    }
   });
 });

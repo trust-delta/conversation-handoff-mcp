@@ -9,6 +9,9 @@ export interface Config {
   maxTitleLength: number;
   maxKeyLength: number;
   keyPattern: RegExp;
+  maxCommentBytes: number;
+  maxCommentsPerHandoff: number;
+  maxCommentAuthorLength: number;
 }
 
 export interface PortRange {
@@ -76,6 +79,9 @@ export const defaultConfig: Config = {
   maxTitleLength: parseEnvInt(process.env.HANDOFF_MAX_TITLE_LENGTH, 200),
   maxKeyLength: parseEnvInt(process.env.HANDOFF_MAX_KEY_LENGTH, 100),
   keyPattern: /^[a-zA-Z0-9_-]+$/,
+  maxCommentBytes: parseEnvInt(process.env.HANDOFF_MAX_COMMENT_BYTES, 10_000),
+  maxCommentsPerHandoff: parseEnvInt(process.env.HANDOFF_MAX_COMMENTS_PER_HANDOFF, 50),
+  maxCommentAuthorLength: parseEnvInt(process.env.HANDOFF_MAX_COMMENT_AUTHOR_LENGTH, 100),
 };
 
 export const connectionConfig: ConnectionConfig = {

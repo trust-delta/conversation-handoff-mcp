@@ -92,6 +92,19 @@
     .message-role.assistant { color: var(--accent-green); }
     .message-content { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
     .loading { color: var(--muted); font-style: italic; }
+    .comment-badge { background: var(--accent-blue); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+    .comments-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .comments-header { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--muted); }
+    .comment { background: var(--conv-bg); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+    .comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .comment-author { font-size: 12px; font-weight: 600; color: var(--accent-blue); }
+    .comment-date { font-size: 11px; color: var(--muted); }
+    .comment-content { font-size: 13px; line-height: 1.4; white-space: pre-wrap; }
+    .btn-comment-delete { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 4px; margin-left: auto; }
+    .btn-comment-delete:hover { color: var(--accent-red); }
+    .comment-form { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
+    .comment-input { flex: 1; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); padding: 6px 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+    .btn-add-comment { flex-shrink: 0; }
   </style>
 </head>
 <body>

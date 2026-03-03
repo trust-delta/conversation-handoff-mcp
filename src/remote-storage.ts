@@ -5,6 +5,7 @@
 import { getAuditLogger } from "./audit.js";
 import { connectionConfig } from "./config.js";
 import type {
+  Comment,
   Handoff,
   HandoffSummary,
   MergeInput,
@@ -204,5 +205,21 @@ export class RemoteStorage implements Storage {
   /** @inheritdoc */
   async merge(input: MergeInput): Promise<StorageResult<MergeResult>> {
     return this.request("POST", "/handoff/merge", input);
+  }
+
+  /** @inheritdoc */
+  async addComment(key: string, author: string, content: string): Promise<StorageResult<Comment>> {
+    return this.request("POST", `/handoff/${encodeURIComponent(key)}/comments`, {
+      author,
+      content,
+    });
+  }
+
+  /** @inheritdoc */
+  async deleteComment(key: string, commentId: string): Promise<StorageResult<{ message: string }>> {
+    return this.request(
+      "DELETE",
+      `/handoff/${encodeURIComponent(key)}/comments/${encodeURIComponent(commentId)}`
+    );
   }
 }

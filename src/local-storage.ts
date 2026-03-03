@@ -7,6 +7,7 @@ import { generateKey, generateTitle } from "./autoconnect.js";
 import type { Config } from "./config.js";
 import { defaultConfig } from "./config.js";
 import type {
+  Comment,
   Handoff,
   HandoffSummary,
   MergeInput,
@@ -33,6 +34,8 @@ import {
  */
 export class LocalStorage implements Storage {
   private handoffs = new Map<string, Handoff>();
+  private comments = new Map<string, Comment[]>();
+  private commentCounter = 0;
   private config: Config;
   /** Cached total byte size of all handoffs (updated incrementally) */
   private cachedTotalBytes = 0;
@@ -76,6 +79,7 @@ export class LocalStorage implements Storage {
       const deleted = this.handoffs.get(oldestKey);
       if (deleted) this.cachedTotalBytes -= this.handoffBytes(deleted);
       this.handoffs.delete(oldestKey);
+      this.comments.delete(oldestKey);
     }
 
     return oldestKey;
@@ -155,6 +159,7 @@ export class LocalStorage implements Storage {
       from_project: h.from_project,
       created_at: h.created_at,
       summary: h.summary,
+      comment_count: this.comments.get(h.key)?.length ?? 0,
     }));
 
     return { success: true, data: summaries };
@@ -173,6 +178,8 @@ export class LocalStorage implements Storage {
       return { success: false, error: `Handoff not found: "${key}"` };
     }
 
+    const comments = this.comments.get(key) ?? [];
+
     // Apply message truncation if requested
     if (maxMessages && maxMessages > 0) {
       const messages = splitConversationMessages(handoff.conversation);
@@ -183,12 +190,13 @@ export class LocalStorage implements Storage {
           data: {
             ...handoff,
             conversation: `[... truncated to last ${maxMessages} messages ...]\n\n${truncatedConversation}`,
+            comments,
           },
         };
       }
     }
 
-    return { success: true, data: handoff };
+    return { success: true, data: { ...handoff, comments } };
   }
 
   /**
@@ -202,6 +210,7 @@ export class LocalStorage implements Storage {
       if (existing) {
         this.cachedTotalBytes -= this.handoffBytes(existing);
         this.handoffs.delete(key);
+        this.comments.delete(key);
         return { success: true, data: { message: `Handoff cleared: "${key}"` } };
       }
       return { success: false, error: `Handoff not found: "${key}"` };
@@ -209,6 +218,7 @@ export class LocalStorage implements Storage {
 
     const count = this.handoffs.size;
     this.handoffs.clear();
+    this.comments.clear();
     this.cachedTotalBytes = 0;
     return { success: true, data: { message: "All handoffs cleared", count } };
   }
@@ -351,12 +361,22 @@ export class LocalStorage implements Storage {
       }
     }
 
-    // 9. Delete sources if requested (before saving to free capacity)
+    // 9. Collect comments from source handoffs before deletion
+    const mergedComments: Comment[] = [];
+    for (const h of sorted) {
+      const srcComments = this.comments.get(h.key);
+      if (srcComments) {
+        mergedComments.push(...srcComments);
+      }
+    }
+
+    // Delete sources if requested (before saving to free capacity)
     if (input.delete_sources) {
       for (const key of input.keys) {
         const src = this.handoffs.get(key);
         if (src) this.cachedTotalBytes -= this.handoffBytes(src);
         this.handoffs.delete(key);
+        this.comments.delete(key);
       }
     }
 
@@ -394,6 +414,11 @@ export class LocalStorage implements Storage {
     this.handoffs.set(mergedKey, mergedHandoff);
     this.cachedTotalBytes += this.handoffBytes(mergedHandoff);
 
+    // Set merged comments (if any)
+    if (mergedComments.length > 0) {
+      this.comments.set(mergedKey, mergedComments);
+    }
+
     getAuditLogger().logStorage({
       event: "merge",
       key: mergedKey,
@@ -410,5 +435,64 @@ export class LocalStorage implements Storage {
         deleted_sources: input.delete_sources,
       },
     };
+  }
+
+  /**
+   * Add a comment to a handoff.
+   * @param key - Handoff key
+   * @param author - Comment author name
+   * @param content - Comment content
+   * @returns Result with the created comment or error
+   */
+  async addComment(key: string, author: string, content: string): Promise<StorageResult<Comment>> {
+    if (!this.handoffs.has(key)) {
+      return { success: false, error: `Handoff not found: "${key}"` };
+    }
+
+    const existing = this.comments.get(key) ?? [];
+    if (existing.length >= this.config.maxCommentsPerHandoff) {
+      return {
+        success: false,
+        error: `Maximum comments per handoff reached (${this.config.maxCommentsPerHandoff})`,
+      };
+    }
+
+    this.commentCounter++;
+    const comment: Comment = {
+      id: `c-${this.commentCounter}`,
+      author,
+      content,
+      created_at: new Date().toISOString(),
+    };
+
+    existing.push(comment);
+    this.comments.set(key, existing);
+
+    return { success: true, data: comment };
+  }
+
+  /**
+   * Delete a comment from a handoff.
+   * @param key - Handoff key
+   * @param commentId - Comment ID to delete
+   * @returns Result with success message or error
+   */
+  async deleteComment(key: string, commentId: string): Promise<StorageResult<{ message: string }>> {
+    if (!this.handoffs.has(key)) {
+      return { success: false, error: `Handoff not found: "${key}"` };
+    }
+
+    const existing = this.comments.get(key);
+    if (!existing) {
+      return { success: false, error: `Comment not found: "${commentId}"` };
+    }
+
+    const index = existing.findIndex((c) => c.id === commentId);
+    if (index === -1) {
+      return { success: false, error: `Comment not found: "${commentId}"` };
+    }
+
+    existing.splice(index, 1);
+    return { success: true, data: { message: `Comment deleted: "${commentId}"` } };
   }
 }
