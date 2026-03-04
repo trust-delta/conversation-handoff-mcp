@@ -123,9 +123,12 @@ export class LocalStorage implements Storage {
       return { success: false, error: validation.error };
     }
 
-    // Subtract old bytes if overwriting existing key
+    // Subtract old bytes and clear comments if overwriting existing key
     const existing = this.handoffs.get(input.key);
-    if (existing) this.cachedTotalBytes -= this.handoffBytes(existing);
+    if (existing) {
+      this.cachedTotalBytes -= this.handoffBytes(existing);
+      this.comments.delete(input.key);
+    }
 
     const handoff: Handoff = {
       key: input.key,
@@ -228,11 +231,17 @@ export class LocalStorage implements Storage {
    * @returns Result with storage stats
    */
   async stats(): Promise<StorageResult<StorageStats>> {
+    let totalComments = 0;
+    for (const comments of this.comments.values()) {
+      totalComments += comments.length;
+    }
+
     return {
       success: true,
       data: {
         current: {
           handoffs: this.handoffs.size,
+          totalComments,
           totalBytes: this.cachedTotalBytes,
           totalBytesFormatted: formatBytes(this.cachedTotalBytes),
         },
@@ -449,6 +458,27 @@ export class LocalStorage implements Storage {
       return { success: false, error: `Handoff not found: "${key}"` };
     }
 
+    // Validate content
+    if (!content || content.trim().length === 0) {
+      return { success: false, error: "Comment content cannot be empty" };
+    }
+    const contentBytes = Buffer.byteLength(content, "utf8");
+    if (contentBytes > this.config.maxCommentBytes) {
+      return {
+        success: false,
+        error: `Comment content exceeds maximum size (${this.config.maxCommentBytes} bytes)`,
+      };
+    }
+
+    // Validate and normalize author
+    const normalizedAuthor = !author || author.trim().length === 0 ? "anonymous" : author;
+    if (normalizedAuthor.length > this.config.maxCommentAuthorLength) {
+      return {
+        success: false,
+        error: `Author name exceeds maximum length (${this.config.maxCommentAuthorLength} chars)`,
+      };
+    }
+
     const existing = this.comments.get(key) ?? [];
     if (existing.length >= this.config.maxCommentsPerHandoff) {
       return {
@@ -460,7 +490,7 @@ export class LocalStorage implements Storage {
     this.commentCounter++;
     const comment: Comment = {
       id: `c-${this.commentCounter}`,
-      author,
+      author: normalizedAuthor,
       content,
       created_at: new Date().toISOString(),
     };

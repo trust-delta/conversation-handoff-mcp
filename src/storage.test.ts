@@ -115,6 +115,17 @@ describe("LocalStorage", () => {
       expect(newExists.success).toBe(true);
     });
 
+    it("should clear comments when overwriting existing key", async () => {
+      await storage.save(validInput);
+      await storage.addComment(validInput.key, "user", "Old comment");
+
+      // Overwrite the handoff
+      await storage.save({ ...validInput, title: "Updated Title" });
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments).toEqual([]);
+    });
+
     it("should not delete when updating existing key at capacity", async () => {
       // Fill up to max capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
@@ -278,6 +289,22 @@ describe("LocalStorage", () => {
 
       const result = await storage.stats();
       expect(result.data?.usage.handoffsPercent).toBe(50); // 5 out of 10
+    });
+
+    it("should include totalComments in stats", async () => {
+      await storage.save(validInput);
+      await storage.save({ ...validInput, key: "another" });
+      await storage.addComment(validInput.key, "user", "Comment 1");
+      await storage.addComment(validInput.key, "user", "Comment 2");
+      await storage.addComment("another", "user", "Comment 3");
+
+      const result = await storage.stats();
+      expect(result.data?.current.totalComments).toBe(3);
+    });
+
+    it("should return 0 totalComments when no comments exist", async () => {
+      const result = await storage.stats();
+      expect(result.data?.current.totalComments).toBe(0);
     });
   });
 
@@ -618,6 +645,40 @@ describe("LocalStorage", () => {
       await storage.save(validInput);
       const loaded = await storage.load(validInput.key);
       expect(loaded.data?.comments).toEqual([]);
+    });
+
+    it("should reject empty comment content", async () => {
+      await storage.save(validInput);
+      const result = await storage.addComment(validInput.key, "user", "   ");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("cannot be empty");
+    });
+
+    it("should reject oversized comment content", async () => {
+      const limitedConfig: Config = { ...testConfig, maxCommentBytes: 100 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      await limitedStorage.save(validInput);
+
+      const result = await limitedStorage.addComment(validInput.key, "user", "x".repeat(101));
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceeds maximum size");
+    });
+
+    it("should reject oversized author name", async () => {
+      const limitedConfig: Config = { ...testConfig, maxCommentAuthorLength: 10 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      await limitedStorage.save(validInput);
+
+      const result = await limitedStorage.addComment(validInput.key, "x".repeat(11), "content");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceeds maximum length");
+    });
+
+    it("should fallback empty author to anonymous", async () => {
+      await storage.save(validInput);
+      const result = await storage.addComment(validInput.key, "  ", "content");
+      expect(result.success).toBe(true);
+      expect(result.data?.author).toBe("anonymous");
     });
 
     it("should enforce max comments per handoff limit", async () => {

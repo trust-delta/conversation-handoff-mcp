@@ -46,6 +46,7 @@ export interface SaveInput {
 export interface StorageStats {
   current: {
     handoffs: number;
+    totalComments: number;
     totalBytes: number;
     totalBytesFormatted: string;
   };

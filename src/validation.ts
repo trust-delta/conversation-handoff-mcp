@@ -134,7 +134,7 @@ export function validateHandoff(
 
 /** Validation result for add comment input with type-safe narrowing */
 export type AddCommentInputValidationResult =
-  | { valid: true; data: { key: string; author: string; content: string } }
+  | { valid: true; data: { author: string; content: string } }
   | { valid: false; error: string };
 
 /**
@@ -185,7 +185,7 @@ export function validateAddCommentInput(input: unknown): AddCommentInputValidati
     }
   }
 
-  return { valid: true, data: { key: "", author, content: obj.content } };
+  return { valid: true, data: { author, content: obj.content } };
 }
 
 // =============================================================================
