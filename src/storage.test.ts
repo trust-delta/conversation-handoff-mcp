@@ -16,6 +16,9 @@ const testConfig: Config = {
   maxTitleLength: 200,
   maxKeyLength: 100,
   keyPattern: /^[a-zA-Z0-9_-]+$/,
+  maxCommentBytes: 10000,
+  maxCommentsPerHandoff: 50,
+  maxCommentAuthorLength: 100,
 };
 
 describe("LocalStorage", () => {
@@ -112,6 +115,17 @@ describe("LocalStorage", () => {
       expect(newExists.success).toBe(true);
     });
 
+    it("should clear comments when overwriting existing key", async () => {
+      await storage.save(validInput);
+      await storage.addComment(validInput.key, "user", "Old comment");
+
+      // Overwrite the handoff
+      await storage.save({ ...validInput, title: "Updated Title" });
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments).toEqual([]);
+    });
+
     it("should not delete when updating existing key at capacity", async () => {
       // Fill up to max capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
@@ -158,7 +172,17 @@ describe("LocalStorage", () => {
       expect(summary?.key).toBeDefined();
       expect(summary?.title).toBeDefined();
       expect(summary?.summary).toBeDefined();
+      expect(summary?.comment_count).toBe(0);
       expect(summary && "conversation" in summary).toBe(false);
+    });
+
+    it("should include comment_count in summaries", async () => {
+      await storage.save(validInput);
+      await storage.addComment(validInput.key, "user", "A comment");
+      await storage.addComment(validInput.key, "user", "Another comment");
+
+      const result = await storage.list();
+      expect(result.data?.[0]?.comment_count).toBe(2);
     });
   });
 
@@ -265,6 +289,22 @@ describe("LocalStorage", () => {
 
       const result = await storage.stats();
       expect(result.data?.usage.handoffsPercent).toBe(50); // 5 out of 10
+    });
+
+    it("should include totalComments in stats", async () => {
+      await storage.save(validInput);
+      await storage.save({ ...validInput, key: "another" });
+      await storage.addComment(validInput.key, "user", "Comment 1");
+      await storage.addComment(validInput.key, "user", "Comment 2");
+      await storage.addComment("another", "user", "Comment 3");
+
+      const result = await storage.stats();
+      expect(result.data?.current.totalComments).toBe(3);
+    });
+
+    it("should return 0 totalComments when no comments exist", async () => {
+      const result = await storage.stats();
+      expect(result.data?.current.totalComments).toBe(0);
     });
   });
 
@@ -518,6 +558,178 @@ describe("LocalStorage", () => {
       // The oldest non-source handoff (fill-2) should have been deleted
       const fill2 = await storage.load("fill-2");
       expect(fill2.success).toBe(false);
+    });
+  });
+
+  describe("comments", () => {
+    it("should add a comment to an existing handoff", async () => {
+      await storage.save(validInput);
+      const result = await storage.addComment(validInput.key, "user1", "Great handoff!");
+      expect(result.success).toBe(true);
+      expect(result.data?.id).toMatch(/^c-\d+$/);
+      expect(result.data?.author).toBe("user1");
+      expect(result.data?.content).toBe("Great handoff!");
+      expect(result.data?.created_at).toBeDefined();
+    });
+
+    it("should error when adding comment to non-existent handoff", async () => {
+      const result = await storage.addComment("no-such-key", "user", "test");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not found");
+    });
+
+    it("should include comments in load response", async () => {
+      await storage.save(validInput);
+      await storage.addComment(validInput.key, "user1", "Comment 1");
+      await storage.addComment(validInput.key, "user2", "Comment 2");
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.success).toBe(true);
+      expect(loaded.data?.comments?.length).toBe(2);
+      expect(loaded.data?.comments?.[0]?.content).toBe("Comment 1");
+      expect(loaded.data?.comments?.[1]?.content).toBe("Comment 2");
+    });
+
+    it("should return empty comments array when none exist", async () => {
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments).toEqual([]);
+    });
+
+    it("should delete a specific comment", async () => {
+      await storage.save(validInput);
+      const added = await storage.addComment(validInput.key, "user", "To delete");
+      const commentId = added.data?.id ?? "";
+
+      const result = await storage.deleteComment(validInput.key, commentId);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments?.length).toBe(0);
+    });
+
+    it("should error when deleting from non-existent handoff", async () => {
+      const result = await storage.deleteComment("no-key", "c-1");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not found");
+    });
+
+    it("should error when deleting non-existent comment", async () => {
+      await storage.save(validInput);
+      const result = await storage.deleteComment(validInput.key, "c-999");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not found");
+    });
+
+    it("should delete comments when handoff is cleared", async () => {
+      await storage.save(validInput);
+      await storage.addComment(validInput.key, "user", "Comment");
+
+      await storage.clear(validInput.key);
+
+      // Re-save and verify comments are gone
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments).toEqual([]);
+    });
+
+    it("should delete all comments when all handoffs are cleared", async () => {
+      await storage.save(validInput);
+      await storage.save({ ...validInput, key: "another" });
+      await storage.addComment(validInput.key, "user", "Comment 1");
+      await storage.addComment("another", "user", "Comment 2");
+
+      await storage.clear();
+
+      // Re-save and verify comments are gone
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.comments).toEqual([]);
+    });
+
+    it("should reject empty comment content", async () => {
+      await storage.save(validInput);
+      const result = await storage.addComment(validInput.key, "user", "   ");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("cannot be empty");
+    });
+
+    it("should reject oversized comment content", async () => {
+      const limitedConfig: Config = { ...testConfig, maxCommentBytes: 100 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      await limitedStorage.save(validInput);
+
+      const result = await limitedStorage.addComment(validInput.key, "user", "x".repeat(101));
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceeds maximum size");
+    });
+
+    it("should reject oversized author name", async () => {
+      const limitedConfig: Config = { ...testConfig, maxCommentAuthorLength: 10 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      await limitedStorage.save(validInput);
+
+      const result = await limitedStorage.addComment(validInput.key, "x".repeat(11), "content");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceeds maximum length");
+    });
+
+    it("should fallback empty author to anonymous", async () => {
+      await storage.save(validInput);
+      const result = await storage.addComment(validInput.key, "  ", "content");
+      expect(result.success).toBe(true);
+      expect(result.data?.author).toBe("anonymous");
+    });
+
+    it("should enforce max comments per handoff limit", async () => {
+      const limitedConfig: Config = { ...testConfig, maxCommentsPerHandoff: 3 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      await limitedStorage.save(validInput);
+
+      for (let i = 0; i < 3; i++) {
+        const r = await limitedStorage.addComment(validInput.key, "user", `Comment ${i}`);
+        expect(r.success).toBe(true);
+      }
+
+      const result = await limitedStorage.addComment(validInput.key, "user", "Over limit");
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Maximum comments");
+    });
+
+    it("should merge comments when merging handoffs", async () => {
+      await storage.save({ ...validInput, key: "h1" });
+      await storage.save({ ...validInput, key: "h2" });
+      await storage.addComment("h1", "user1", "Comment on h1");
+      await storage.addComment("h2", "user2", "Comment on h2");
+
+      const result = await storage.merge({
+        keys: ["h1", "h2"],
+        delete_sources: false,
+        strategy: "chronological",
+      });
+      expect(result.success).toBe(true);
+
+      const mergedKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(mergedKey);
+      expect(loaded.data?.comments?.length).toBe(2);
+      expect(loaded.data?.comments?.[0]?.content).toBe("Comment on h1");
+      expect(loaded.data?.comments?.[1]?.content).toBe("Comment on h2");
+    });
+
+    it("should delete source comments when merge with delete_sources", async () => {
+      await storage.save({ ...validInput, key: "h1" });
+      await storage.save({ ...validInput, key: "h2" });
+      await storage.addComment("h1", "user", "Comment");
+
+      await storage.merge({
+        keys: ["h1", "h2"],
+        delete_sources: true,
+        strategy: "chronological",
+      });
+
+      // Source handoff is deleted, so comment should be gone
+      const h1 = await storage.load("h1");
+      expect(h1.success).toBe(false);
     });
   });
 });

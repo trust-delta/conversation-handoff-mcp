@@ -192,6 +192,111 @@ describe("HttpServer", () => {
     });
   });
 
+  describe("Comment endpoints", () => {
+    // Setup: save a handoff for comment tests
+    beforeAll(async () => {
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "comment-test",
+          title: "Comment Test",
+          summary: "Testing comments",
+          conversation: "## User\nHello\n\n## Assistant\nHi",
+          from_ai: "claude",
+          from_project: "test",
+        }),
+      });
+    });
+
+    it("should add a comment to a handoff", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/comment-test/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Nice handoff!", author: "tester" }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as { id: string; author: string; content: string };
+      expect(data.id).toBeDefined();
+      expect(data.author).toBe("tester");
+      expect(data.content).toBe("Nice handoff!");
+    });
+
+    it("should return 404 when adding comment to non-existent handoff", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/no-such-key/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "test" }),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 400 for missing content", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/comment-test/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("should delete a comment", async () => {
+      // First add a comment
+      const addResponse = await fetch(
+        `http://127.0.0.1:${testPort}/handoff/comment-test/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: "To delete" }),
+        }
+      );
+      const added = (await addResponse.json()) as { id: string };
+
+      // Then delete it
+      const response = await fetch(
+        `http://127.0.0.1:${testPort}/handoff/comment-test/comments/${added.id}`,
+        { method: "DELETE" }
+      );
+      expect(response.status).toBe(200);
+    });
+
+    it("should return 404 when deleting non-existent comment", async () => {
+      const response = await fetch(
+        `http://127.0.0.1:${testPort}/handoff/comment-test/comments/c-99999`,
+        { method: "DELETE" }
+      );
+      expect(response.status).toBe(404);
+    });
+
+    it("should include comments in load response", async () => {
+      // Add a comment
+      await fetch(`http://127.0.0.1:${testPort}/handoff/comment-test/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Visible in load", author: "tester" }),
+      });
+
+      // Load the handoff
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/comment-test`);
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as {
+        key: string;
+        comments: Array<{ content: string }>;
+      };
+      expect(data.comments).toBeDefined();
+      expect(data.comments.length).toBeGreaterThan(0);
+      expect(data.comments.some((c) => c.content === "Visible in load")).toBe(true);
+    });
+
+    it("should include comment_count in list response", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`);
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as Array<{ key: string; comment_count: number }>;
+      const item = data.find((h) => h.key === "comment-test");
+      expect(item?.comment_count).toBeGreaterThan(0);
+    });
+  });
+
   describe("Binding", () => {
     it("should only be accessible via localhost", async () => {
       // This test verifies the server is bound to 127.0.0.1

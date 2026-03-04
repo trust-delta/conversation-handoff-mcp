@@ -228,6 +228,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
               from_ai: z.string(),
               from_project: z.string(),
               created_at: z.string(),
+              comment_count: z.number(),
             })
           )
           .describe("List of handoffs"),
@@ -306,6 +307,15 @@ Omit sections that don't apply. Add custom sections if needed.`,
       }
 
       const handoff = result.data;
+      const comments = handoff.comments ?? [];
+
+      let commentsText = "";
+      if (comments.length > 0) {
+        const commentLines = comments.map(
+          (c) => `- **${c.author}** (${c.created_at}): ${c.content}`
+        );
+        commentsText = `\n\n## Comments (${comments.length})\n${commentLines.join("\n")}`;
+      }
 
       return {
         content: [
@@ -320,7 +330,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
 ${handoff.summary}
 
 ## Conversation
-${handoff.conversation}`,
+${handoff.conversation}${commentsText}`,
           },
         ],
         structuredContent: {
@@ -331,6 +341,7 @@ ${handoff.conversation}`,
           from_ai: handoff.from_ai,
           from_project: handoff.from_project,
           created_at: handoff.created_at,
+          comments,
         },
       };
     }
@@ -596,6 +607,90 @@ ${handoff.conversation}`,
           {
             type: "text",
             text: message,
+          },
+        ],
+      };
+    }
+  );
+
+  // handoff_add_comment
+  server.tool(
+    "handoff_add_comment",
+    "Add a comment or annotation to an existing handoff. Comments are included when loading the handoff.",
+    {
+      key: z.string().describe("The key of the handoff to comment on"),
+      content: z.string().describe("The comment content"),
+      author: z
+        .string()
+        .default("anonymous")
+        .describe("Author name for the comment (default: 'anonymous')"),
+    },
+    async ({ key, content, author }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
+      const { storage } = await getStorage();
+      const result = await storage.addComment(key, author, content);
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_add_comment",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: `\u274C Error: ${result.error}` }],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `\u2705 Comment added to "${key}"\n\n**${result.data?.author}**: ${result.data?.content}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // handoff_delete_comment
+  server.tool(
+    "handoff_delete_comment",
+    "Delete a comment from a handoff by its comment ID.",
+    {
+      key: z.string().describe("The key of the handoff"),
+      comment_id: z.string().describe("The ID of the comment to delete"),
+    },
+    async ({ key, comment_id }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
+      const { storage } = await getStorage();
+      const result = await storage.deleteComment(key, comment_id);
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_delete_comment",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: `\u274C Error: ${result.error}` }],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `\u2705 Comment deleted from "${key}"`,
           },
         ],
       };

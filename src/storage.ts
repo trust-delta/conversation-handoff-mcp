@@ -4,6 +4,7 @@
 
 // Re-export all types for backward compatibility
 export type {
+  Comment,
   Handoff,
   HandoffSummary,
   SaveInput,

@@ -129,6 +129,66 @@ export function validateHandoff(
 }
 
 // =============================================================================
+// Comment Validation
+// =============================================================================
+
+/** Validation result for add comment input with type-safe narrowing */
+export type AddCommentInputValidationResult =
+  | { valid: true; data: { author: string; content: string } }
+  | { valid: false; error: string };
+
+/**
+ * Validate add comment input from HTTP request body.
+ * @param input - Raw input from HTTP request body
+ * @returns Validation result with typed data when valid
+ */
+export function validateAddCommentInput(input: unknown): AddCommentInputValidationResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { valid: false, error: "Request body must be an object" };
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  // content: required string
+  if (!("content" in obj)) {
+    return { valid: false, error: "Missing required field: content" };
+  }
+  if (typeof obj.content !== "string") {
+    return { valid: false, error: "Field 'content' must be a string" };
+  }
+  if (obj.content.trim().length === 0) {
+    return { valid: false, error: "Comment content cannot be empty" };
+  }
+
+  const contentBytes = Buffer.byteLength(obj.content, "utf8");
+  if (contentBytes > defaultConfig.maxCommentBytes) {
+    return {
+      valid: false,
+      error: `Comment content exceeds maximum size (${defaultConfig.maxCommentBytes} bytes)`,
+    };
+  }
+
+  // author: optional string, defaults to "anonymous"
+  let author = "anonymous";
+  if ("author" in obj) {
+    if (typeof obj.author !== "string") {
+      return { valid: false, error: "Field 'author' must be a string" };
+    }
+    if (obj.author.length > defaultConfig.maxCommentAuthorLength) {
+      return {
+        valid: false,
+        error: `Author name exceeds maximum length (${defaultConfig.maxCommentAuthorLength} chars)`,
+      };
+    }
+    if (obj.author.trim().length > 0) {
+      author = obj.author;
+    }
+  }
+
+  return { valid: true, data: { author, content: obj.content } };
+}
+
+// =============================================================================
 // HTTP API Input Validation
 // =============================================================================
 

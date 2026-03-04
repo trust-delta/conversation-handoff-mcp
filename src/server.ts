@@ -9,6 +9,7 @@ import { LocalStorage } from "./storage.js";
 import {
   connectionConfig,
   defaultConfig,
+  validateAddCommentInput,
   validateMergeInput,
   validateSaveInput,
 } from "./validation.js";
@@ -162,9 +163,35 @@ export class HttpServer {
    * @param url - Request URL
    * @returns Parsed route with path, optional key, and query params
    */
-  private parseRoute(url: string): { path: string; key?: string; query: URLSearchParams } {
+  private parseRoute(url: string): {
+    path: string;
+    key?: string;
+    commentId?: string;
+    query: URLSearchParams;
+  } {
     const urlObj = new URL(url, `http://localhost:${this.port}`);
     const pathname = urlObj.pathname;
+
+    // Match /handoff/:key/comments/:commentId pattern
+    const commentIdMatch = pathname.match(/^\/handoff\/([^/]+)\/comments\/([^/]+)$/);
+    if (commentIdMatch?.[1] && commentIdMatch[2]) {
+      return {
+        path: "/handoff/:key/comments/:commentId",
+        key: decodeURIComponent(commentIdMatch[1]),
+        commentId: decodeURIComponent(commentIdMatch[2]),
+        query: urlObj.searchParams,
+      };
+    }
+
+    // Match /handoff/:key/comments pattern
+    const commentsMatch = pathname.match(/^\/handoff\/([^/]+)\/comments$/);
+    if (commentsMatch?.[1]) {
+      return {
+        path: "/handoff/:key/comments",
+        key: decodeURIComponent(commentsMatch[1]),
+        query: urlObj.searchParams,
+      };
+    }
 
     // Match /handoff/:key pattern
     const handoffMatch = pathname.match(/^\/handoff\/([^/]+)$/);
@@ -226,7 +253,7 @@ export class HttpServer {
     this.touchLastRequest();
 
     const method = req.method || "GET";
-    const { path, key, query } = this.parseRoute(req.url || "/");
+    const { path, key, commentId, query } = this.parseRoute(req.url || "/");
 
     // Audit logging
     const audit = getAuditLogger();
@@ -265,6 +292,45 @@ export class HttpServer {
         }
 
         const result = await this.storage.merge(validation.data);
+        if (result.success) {
+          this.sendJson(res, 200, result.data);
+        } else if (result.error?.includes("not found")) {
+          this.sendJson(res, 404, { error: result.error });
+        } else {
+          this.sendJson(res, 400, { error: result.error });
+        }
+        return;
+      }
+
+      // POST /handoff/:key/comments - Add comment
+      if (method === "POST" && path === "/handoff/:key/comments" && key) {
+        const rawInput = await this.parseJsonBody(req, res);
+        if (rawInput === null) return;
+
+        const validation = validateAddCommentInput(rawInput);
+        if (!validation.valid) {
+          this.sendJson(res, 400, { error: validation.error });
+          return;
+        }
+
+        const result = await this.storage.addComment(
+          key,
+          validation.data.author,
+          validation.data.content
+        );
+        if (result.success) {
+          this.sendJson(res, 200, result.data);
+        } else if (result.error?.includes("not found")) {
+          this.sendJson(res, 404, { error: result.error });
+        } else {
+          this.sendJson(res, 400, { error: result.error });
+        }
+        return;
+      }
+
+      // DELETE /handoff/:key/comments/:commentId - Delete comment
+      if (method === "DELETE" && path === "/handoff/:key/comments/:commentId" && key && commentId) {
+        const result = await this.storage.deleteComment(key, commentId);
         if (result.success) {
           this.sendJson(res, 200, result.data);
         } else if (result.error?.includes("not found")) {

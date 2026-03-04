@@ -4,6 +4,14 @@
 
 import type { InputSizes } from "./validation.js";
 
+/** A comment attached to a handoff */
+export interface Comment {
+  id: string;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
 export interface Handoff {
   key: string;
   title: string;
@@ -12,6 +20,8 @@ export interface Handoff {
   created_at: string;
   summary: string;
   conversation: string;
+  /** Comments attached to this handoff (populated on load) */
+  comments?: Comment[];
 }
 
 export interface HandoffSummary {
@@ -21,6 +31,7 @@ export interface HandoffSummary {
   from_project: string;
   created_at: string;
   summary: string;
+  comment_count: number;
 }
 
 export interface SaveInput {
@@ -35,6 +46,7 @@ export interface SaveInput {
 export interface StorageStats {
   current: {
     handoffs: number;
+    totalComments: number;
     totalBytes: number;
     totalBytesFormatted: string;
   };
@@ -89,6 +101,8 @@ export interface Storage {
   clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>>;
   stats(): Promise<StorageResult<StorageStats>>;
   merge(input: MergeInput): Promise<StorageResult<MergeResult>>;
+  addComment(key: string, author: string, content: string): Promise<StorageResult<Comment>>;
+  deleteComment(key: string, commentId: string): Promise<StorageResult<{ message: string }>>;
 }
 
 export type StorageMode = "shared" | "standalone" | "standalone-explicit";
