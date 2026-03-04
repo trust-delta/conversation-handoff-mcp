@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-04
+
+### Added
+
+- **Comment/Annotation Feature**: Add comments to handoffs for cross-session notes and context
+  - `handoff_add_comment` / `handoff_delete_comment` MCP tools
+  - `POST /handoff/:key/comments` / `DELETE /handoff/:key/comments/:commentId` HTTP endpoints
+  - Comments displayed in `handoff_list` (count) and `handoff_load` (full content)
+  - Comments merged when handoffs are merged, cleared on handoff overwrite
+  - Interactive comment management in MCP Apps UI
+  - 37 new tests (total: 242)
+
+### Fixed
+
+- **Security**: Add content/author validation to `LocalStorage.addComment()` to prevent bypass via MCP tools in standalone mode
+- **Bug**: Clear comments when overwriting existing handoff key via `save()`
+
+### Changed
+
+- Add `totalComments` to `StorageStats` for visibility into comment usage
+- Remove unused `key` field from `validateAddCommentInput` return type
+
 ## [0.9.3] - 2026-03-02
 
 ### Changed
