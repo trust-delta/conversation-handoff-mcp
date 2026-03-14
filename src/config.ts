@@ -22,7 +22,12 @@ export interface PortRange {
 export interface ConnectionConfig {
   portRange: PortRange;
   retryCount: number;
+  /** Maximum retry interval in ms (cap for exponential backoff) */
   retryIntervalMs: number;
+  /** Initial retry interval in ms for exponential backoff */
+  retryInitialIntervalMs: number;
+  /** Maximum total retry time in ms */
+  retryMaxTotalMs: number;
   /** Server TTL in ms (0 = disabled). Server shuts down after this time of inactivity. */
   serverTtlMs: number;
   /** Fetch timeout in ms for HTTP requests */
@@ -86,8 +91,10 @@ export const defaultConfig: Config = {
 
 export const connectionConfig: ConnectionConfig = {
   portRange: parsePortRange(process.env.HANDOFF_PORT_RANGE, { start: 1099, end: 1200 }),
-  retryCount: parseEnvInt(process.env.HANDOFF_RETRY_COUNT, 30),
-  retryIntervalMs: parseEnvInt(process.env.HANDOFF_RETRY_INTERVAL, 10000),
+  retryCount: parseEnvInt(process.env.HANDOFF_RETRY_COUNT, 10),
+  retryIntervalMs: parseEnvInt(process.env.HANDOFF_RETRY_INTERVAL, 5000),
+  retryInitialIntervalMs: parseEnvInt(process.env.HANDOFF_RETRY_INITIAL_INTERVAL, 500),
+  retryMaxTotalMs: parseEnvInt(process.env.HANDOFF_RETRY_MAX_TOTAL, 30000),
   serverTtlMs: parseEnvInt(process.env.HANDOFF_SERVER_TTL, 24 * 60 * 60 * 1000, 0), // Default: 24 hours, min: 0 (disabled)
   fetchTimeoutMs: parseEnvInt(process.env.HANDOFF_FETCH_TIMEOUT, 30 * 1000), // Default: 30 seconds
 };

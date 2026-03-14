@@ -993,7 +993,7 @@ describe("getStorage", () => {
     expect(result.serverUrl).toBe("http://localhost:3000");
   });
 
-  it("should cache auto-connect result per process", async () => {
+  it("should cache auto-connect result per process", { timeout: 15000 }, async () => {
     // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 

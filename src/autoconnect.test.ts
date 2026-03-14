@@ -69,26 +69,22 @@ describe("scanForServer", () => {
     vi.restoreAllMocks();
   });
 
-  it("should limit concurrent port scans", async () => {
-    let maxConcurrent = 0;
-    let currentConcurrent = 0;
+  it("should fire all port checks simultaneously", async () => {
     const portRange = { start: 1099, end: 1150 }; // 52 ports
+    const portCount = portRange.end - portRange.start + 1;
+    let fetchCallCount = 0;
 
     globalThis.fetch = vi.fn().mockImplementation(async () => {
-      currentConcurrent++;
-      maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
-
+      fetchCallCount++;
       // Simulate network delay
       await new Promise((resolve) => setTimeout(resolve, 10));
-
-      currentConcurrent--;
       return Promise.reject(new Error("Connection refused"));
     });
 
     await scanForServer(portRange);
 
-    // Should never exceed SCAN_CONCURRENCY (10)
-    expect(maxConcurrent).toBeLessThanOrEqual(10);
+    // All ports should be checked (fired simultaneously)
+    expect(fetchCallCount).toBe(portCount);
   });
 
   it("should return found port", async () => {
@@ -118,22 +114,25 @@ describe("scanForServer", () => {
     expect(port).toBeNull();
   });
 
-  it("should stop scanning after finding first server", async () => {
+  it("should abort remaining checks after finding a server", async () => {
     const portRange = { start: 1099, end: 1200 }; // 102 ports
-    const checkedPorts: number[] = [];
+    const abortedSignals: boolean[] = [];
 
-    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
-      const match = url.match(/localhost:(\d+)/);
-      if (match) {
-        checkedPorts.push(Number.parseInt(match[1], 10));
-      }
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      const signal = init?.signal;
 
-      // Port 1099 (first port in first chunk) has a server
+      // Port 1099 responds immediately
       if (url === "http://localhost:1099/") {
         return {
           ok: true,
           json: () => Promise.resolve({ name: "conversation-handoff-server" }),
         };
+      }
+
+      // Other ports wait a bit, then record if they were aborted
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (signal?.aborted) {
+        abortedSignals.push(true);
       }
       throw new Error("Connection refused");
     });
@@ -141,7 +140,28 @@ describe("scanForServer", () => {
     const port = await scanForServer(portRange);
     expect(port).toBe(1099);
 
-    // Should only check first chunk (10 ports) since server was found
-    expect(checkedPorts.length).toBeLessThanOrEqual(10);
+    // Give time for remaining checks to observe the abort
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Some signals should have been aborted
+    expect(abortedSignals.length).toBeGreaterThan(0);
+  });
+
+  it("should pass AbortSignal to fetch requests", async () => {
+    const portRange = { start: 1099, end: 1101 };
+    const signals: (AbortSignal | undefined)[] = [];
+
+    globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      throw new Error("Connection refused");
+    });
+
+    await scanForServer(portRange);
+
+    // All fetch calls should receive a signal (combined timeout + abort signal)
+    expect(signals.length).toBe(3);
+    for (const signal of signals) {
+      expect(signal).toBeDefined();
+    }
   });
 });

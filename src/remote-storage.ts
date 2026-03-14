@@ -27,6 +27,7 @@ export type ReconnectFn = () => Promise<string | null>;
 export class RemoteStorage implements Storage {
   private serverUrl: string;
   private reconnectAttempts = 0;
+  private retryStartTime: number | null = null;
   private readonly maxReconnectAttempts: number;
   private readonly reconnectFn?: ReconnectFn;
 
@@ -50,7 +51,7 @@ export class RemoteStorage implements Storage {
 
   /**
    * Attempt to reconnect to a server and update the URL.
-   * Applies retry delay between consecutive failed attempts.
+   * Applies exponential backoff delay between consecutive failed attempts.
    * @returns true if reconnection was successful
    */
   private async tryReconnect(): Promise<boolean> {
@@ -59,9 +60,23 @@ export class RemoteStorage implements Storage {
       return false;
     }
 
-    // Apply delay before retry (except for first attempt)
+    // Check total elapsed time
+    if (this.retryStartTime !== null) {
+      const elapsed = Date.now() - this.retryStartTime;
+      if (elapsed >= connectionConfig.retryMaxTotalMs) {
+        return false;
+      }
+    } else {
+      this.retryStartTime = Date.now();
+    }
+
+    // Apply exponential backoff delay (except for first attempt)
     if (this.reconnectAttempts > 0) {
-      await sleep(connectionConfig.retryIntervalMs);
+      const delay = Math.min(
+        connectionConfig.retryInitialIntervalMs * 2 ** (this.reconnectAttempts - 1),
+        connectionConfig.retryIntervalMs // max cap
+      );
+      await sleep(delay);
     }
 
     this.reconnectAttempts++;
@@ -148,8 +163,9 @@ export class RemoteStorage implements Storage {
       clearTimeout(timeoutId);
     }
 
-    // Reset reconnect attempts on successful connection
+    // Reset reconnect attempts and retry timer on successful connection
     this.reconnectAttempts = 0;
+    this.retryStartTime = null;
 
     // Parse JSON response safely
     let data: { error?: string } & T;

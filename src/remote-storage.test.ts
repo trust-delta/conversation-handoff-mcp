@@ -295,6 +295,136 @@ describe("RemoteStorage - advanced", () => {
     });
   });
 
+  describe("exponential backoff", () => {
+    it("should apply exponential backoff delays between retry attempts", async () => {
+      const origRetryCount = connectionConfig.retryCount;
+      const origRetryInterval = connectionConfig.retryIntervalMs;
+      const origInitialInterval = connectionConfig.retryInitialIntervalMs;
+      const origMaxTotal = connectionConfig.retryMaxTotalMs;
+
+      // Configure for predictable backoff: 100, 200, 400 (capped at 500)
+      (connectionConfig as { retryCount: number }).retryCount = 4;
+      (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = 500;
+      (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs = 100;
+      (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = 60000;
+
+      try {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const delays: number[] = [];
+        // Track sleep calls to verify backoff pattern
+        const sleepSpy = vi.spyOn(await import("./validation.js"), "sleep");
+        sleepSpy.mockImplementation(async (ms: number) => {
+          delays.push(ms);
+        });
+
+        const mockReconnect = vi.fn().mockResolvedValue("http://localhost:2000");
+        const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
+        await storage.list();
+
+        // First attempt has no delay, subsequent attempts have exponential backoff
+        // Attempt 1: no delay, attempt 2: 100ms, attempt 3: 200ms, attempt 4: 400ms
+        expect(delays).toEqual([100, 200, 400]);
+        expect(mockReconnect).toHaveBeenCalledTimes(4);
+
+        sleepSpy.mockRestore();
+      } finally {
+        (connectionConfig as { retryCount: number }).retryCount = origRetryCount;
+        (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = origRetryInterval;
+        (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs =
+          origInitialInterval;
+        (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = origMaxTotal;
+      }
+    });
+
+    it("should cap backoff delay at retryIntervalMs", async () => {
+      const origRetryCount = connectionConfig.retryCount;
+      const origRetryInterval = connectionConfig.retryIntervalMs;
+      const origInitialInterval = connectionConfig.retryInitialIntervalMs;
+      const origMaxTotal = connectionConfig.retryMaxTotalMs;
+
+      // Cap at 150ms: delays would be 100, 150 (capped from 200), 150 (capped from 400)
+      (connectionConfig as { retryCount: number }).retryCount = 4;
+      (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = 150;
+      (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs = 100;
+      (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = 60000;
+
+      try {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+        const delays: number[] = [];
+        const sleepSpy = vi.spyOn(await import("./validation.js"), "sleep");
+        sleepSpy.mockImplementation(async (ms: number) => {
+          delays.push(ms);
+        });
+
+        const mockReconnect = vi.fn().mockResolvedValue("http://localhost:2000");
+        const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
+        await storage.list();
+
+        expect(delays).toEqual([100, 150, 150]);
+
+        sleepSpy.mockRestore();
+      } finally {
+        (connectionConfig as { retryCount: number }).retryCount = origRetryCount;
+        (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = origRetryInterval;
+        (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs =
+          origInitialInterval;
+        (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = origMaxTotal;
+      }
+    });
+
+    it("should stop retrying when total time exceeds retryMaxTotalMs", async () => {
+      const origRetryCount = connectionConfig.retryCount;
+      const origRetryInterval = connectionConfig.retryIntervalMs;
+      const origInitialInterval = connectionConfig.retryInitialIntervalMs;
+      const origMaxTotal = connectionConfig.retryMaxTotalMs;
+
+      // High retry count but short total time limit (250ms)
+      // Backoff: attempt 1 = no delay, attempt 2 = 100ms (elapsed 100),
+      // attempt 3 = 200ms (elapsed 300 > 250) -> stop
+      (connectionConfig as { retryCount: number }).retryCount = 100;
+      (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = 5000;
+      (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs = 100;
+      (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = 250;
+
+      try {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+        // Mock sleep to be a no-op but advance Date.now
+        let elapsed = 0;
+        const realDateNow = Date.now;
+        const startTime = realDateNow.call(Date);
+        vi.spyOn(Date, "now").mockImplementation(() => startTime + elapsed);
+
+        const sleepSpy = vi.spyOn(await import("./validation.js"), "sleep");
+        sleepSpy.mockImplementation(async (ms: number) => {
+          elapsed += ms;
+        });
+
+        // reconnectFn returns URL so request retries recursively,
+        // but fetch keeps failing, accumulating total elapsed time
+        const mockReconnect = vi.fn().mockResolvedValue("http://localhost:2000");
+        const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
+        const result = await storage.list();
+
+        expect(result.success).toBe(false);
+        // Should have stopped before exhausting retryCount (100) due to total time limit
+        expect(mockReconnect.mock.calls.length).toBeLessThan(100);
+        expect(mockReconnect.mock.calls.length).toBeGreaterThan(1);
+
+        sleepSpy.mockRestore();
+        vi.spyOn(Date, "now").mockRestore();
+      } finally {
+        (connectionConfig as { retryCount: number }).retryCount = origRetryCount;
+        (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = origRetryInterval;
+        (connectionConfig as { retryInitialIntervalMs: number }).retryInitialIntervalMs =
+          origInitialInterval;
+        (connectionConfig as { retryMaxTotalMs: number }).retryMaxTotalMs = origMaxTotal;
+      }
+    });
+  });
+
   describe("reconnection with URL update", () => {
     it("should use new URL after successful reconnection", async () => {
       let callCount = 0;

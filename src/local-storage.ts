@@ -39,6 +39,8 @@ export class LocalStorage implements Storage {
   private config: Config;
   /** Cached total byte size of all handoffs (updated incrementally) */
   private cachedTotalBytes = 0;
+  /** Per-handoff byte size cache to avoid redundant Buffer.byteLength calls */
+  private byteSizeCache = new WeakMap<Handoff, number>();
 
   /**
    * Create a new LocalStorage instance.
@@ -48,14 +50,18 @@ export class LocalStorage implements Storage {
     this.config = config;
   }
 
-  /** Calculate the total byte size of a handoff entry */
+  /** Calculate the total byte size of a handoff entry (cached via WeakMap) */
   private handoffBytes(h: Handoff): number {
-    return (
+    const cached = this.byteSizeCache.get(h);
+    if (cached !== undefined) return cached;
+
+    const size =
       Buffer.byteLength(h.conversation, "utf8") +
       Buffer.byteLength(h.summary, "utf8") +
       Buffer.byteLength(h.title, "utf8") +
-      Buffer.byteLength(h.key, "utf8")
-    );
+      Buffer.byteLength(h.key, "utf8");
+    this.byteSizeCache.set(h, size);
+    return size;
   }
 
   /**
@@ -141,6 +147,20 @@ export class LocalStorage implements Storage {
     };
 
     this.handoffs.set(input.key, handoff);
+
+    // Pre-populate byte size cache from validation inputSizes to avoid redundant calculation
+    if (
+      validation.inputSizes?.conversationBytes != null &&
+      validation.inputSizes?.summaryBytes != null
+    ) {
+      const size =
+        validation.inputSizes.conversationBytes +
+        validation.inputSizes.summaryBytes +
+        Buffer.byteLength(handoff.title, "utf8") +
+        Buffer.byteLength(handoff.key, "utf8");
+      this.byteSizeCache.set(handoff, size);
+    }
+
     this.cachedTotalBytes += this.handoffBytes(handoff);
 
     return {
@@ -301,7 +321,10 @@ export class LocalStorage implements Storage {
     // 3. Sort by strategy
     const sorted = [...sources];
     if (input.strategy === "chronological") {
-      sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      // ISO 8601 strings are lexicographically comparable (no Date parsing needed)
+      sorted.sort((a, b) =>
+        a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
+      );
     }
     // sequential: keep array order (no sorting needed)
 

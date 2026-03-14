@@ -22,13 +22,17 @@ const HEALTH_CHECK_TIMEOUT_MS = 300;
 /**
  * Check if a handoff server is running on the specified port.
  * @param port - Port number to check
+ * @param signal - Optional AbortSignal to cancel the check early
  * @returns true if a handoff server is responding on the port
  */
-async function checkPort(port: number): Promise<boolean> {
+async function checkPort(port: number, signal?: AbortSignal): Promise<boolean> {
   try {
+    const fetchSignal = signal
+      ? AbortSignal.any([AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS), signal])
+      : AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
     const response = await fetch(`http://localhost:${port}/`, {
       method: "GET",
-      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      signal: fetchSignal,
     });
     if (response.ok) {
       const data = (await response.json()) as { name?: string };
@@ -40,26 +44,10 @@ async function checkPort(port: number): Promise<boolean> {
   }
 }
 
-/** Maximum number of concurrent port scans */
-const SCAN_CONCURRENCY = 10;
-
-/**
- * Split array into chunks of specified size.
- * @param array - Array to split
- * @param size - Chunk size
- * @returns Array of chunks
- */
-function chunk<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
 /**
  * Scan ports to find a running handoff server.
- * Limits concurrent scans to SCAN_CONCURRENCY to avoid resource exhaustion.
+ * Fires all port checks simultaneously and returns the first successful port.
+ * Uses AbortController to cancel remaining checks once one succeeds.
  * @param portRange - Port range to scan (start and end inclusive)
  * @returns Port number if a server is found, null otherwise
  */
@@ -69,44 +57,45 @@ export async function scanForServer(portRange: PortRange): Promise<number | null
     ports.push(p);
   }
 
-  // Process ports in chunks to limit concurrency
-  const portChunks = chunk(ports, SCAN_CONCURRENCY);
-  let foundPort: number | null = null;
+  const controller = new AbortController();
 
-  for (const portChunk of portChunks) {
-    if (foundPort !== null) break;
-
-    const results = await Promise.all(
-      portChunk.map(async (port) => {
-        const isRunning = await checkPort(port);
-        return isRunning ? port : null;
+  try {
+    // Each promise resolves with the port number on success, rejects on failure
+    const port = await Promise.any(
+      ports.map(async (port) => {
+        const isRunning = await checkPort(port, controller.signal);
+        if (isRunning) {
+          return port;
+        }
+        throw new Error(`Port ${port} not available`);
       })
     );
 
-    for (const port of results) {
-      if (port !== null) {
-        foundPort = port;
-        break;
-      }
-    }
+    // Cancel remaining checks
+    controller.abort();
+    return port;
+  } catch {
+    // AggregateError: all promises rejected (no server found)
+    return null;
   }
-
-  return foundPort;
 }
 
 /**
  * Find an available (unused) port in the given range.
+ * Checks all ports in parallel and returns the first available one.
  * @param portRange - Port range to search (start and end inclusive)
  * @returns First available port number, or null if all ports are in use
  */
 export async function findAvailablePort(portRange: PortRange): Promise<number | null> {
-  for (let port = portRange.start; port <= portRange.end; port++) {
-    const isInUse = await isPortInUse(port);
-    if (!isInUse) {
-      return port;
-    }
+  const ports: number[] = [];
+  for (let p = portRange.start; p <= portRange.end; p++) {
+    ports.push(p);
   }
-  return null;
+  const results = await Promise.all(
+    ports.map((port) => isPortInUse(port).then((inUse) => ({ port, inUse })))
+  );
+  const available = results.find((r) => !r.inUse);
+  return available ? available.port : null;
 }
 
 /**

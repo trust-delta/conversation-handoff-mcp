@@ -143,7 +143,18 @@ describe("defaultConfig and connectionConfig", () => {
     expect(connectionConfig.portRange.end).toBeGreaterThanOrEqual(connectionConfig.portRange.start);
     expect(connectionConfig.retryCount).toBeGreaterThan(0);
     expect(connectionConfig.retryIntervalMs).toBeGreaterThan(0);
+    expect(connectionConfig.retryInitialIntervalMs).toBeGreaterThan(0);
+    expect(connectionConfig.retryMaxTotalMs).toBeGreaterThan(0);
     expect(connectionConfig.serverTtlMs).toBeGreaterThanOrEqual(0);
     expect(connectionConfig.fetchTimeoutMs).toBeGreaterThan(0);
+  });
+
+  it("should have correct default values for connection config", async () => {
+    const { connectionConfig } = await import("./config.js");
+
+    expect(connectionConfig.retryCount).toBe(10);
+    expect(connectionConfig.retryIntervalMs).toBe(5000);
+    expect(connectionConfig.retryInitialIntervalMs).toBe(500);
+    expect(connectionConfig.retryMaxTotalMs).toBe(30000);
   });
 });
