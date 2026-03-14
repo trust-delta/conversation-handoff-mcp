@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-03-14
+
+### Changed
+
+- **Port Scanning**: Replace chunked sequential scan with `Promise.any` + `AbortController` for parallel scanning (worst case 3.3s → 300ms)
+- **Port Discovery**: Parallelize `findAvailablePort()` with `Promise.all` (O(n) → O(1) parallel)
+- **Retry Strategy**: Exponential backoff (500ms → 1s → 2s → 4s → 5s cap) replaces fixed 10s interval
+  - `retryCount` default: 30 → 10
+  - `retryIntervalMs` default: 10000 → 5000 (now used as max backoff cap)
+  - New config: `retryInitialIntervalMs` (default: 500ms), `retryMaxTotalMs` (default: 30s)
+  - Worst-case blocking: 300s → 30s
+- **Byte Size Caching**: `WeakMap`-based cache for `handoffBytes()`, pre-populated from validation `inputSizes`
+- **HTTP Body Parsing**: `readBody()` uses `Buffer[]` accumulation instead of O(n²) string concatenation
+- **Route Parsing**: `parseRoute()` uses string operations instead of `new URL()` + 3 regex matches
+- **Merge Sort**: ISO 8601 string comparison instead of `Date` object parsing
+- 5 new tests (total: 247)
+
 ## [0.10.0] - 2026-03-04
 
 ### Added
