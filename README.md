@@ -15,6 +15,7 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Handoff Metadata (v0.11.0+)**: Enrich `handoff_list` with message count, size, status, and next action — decide on work resumption without loading full conversations
 - **Comments/Annotations (v0.10.0+)**: Add notes and annotations to handoffs for cross-session context
 - **Server Restart (v0.9.0+)**: Restart the shared HTTP server from any MCP client — useful after package updates
 - **Audit Logging (v0.7.0+)**: Optional structured JSONL logging for diagnostics (`--audit` flag)

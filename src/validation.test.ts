@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type Config,
+  VALID_STATUSES,
   formatBytes,
   splitConversationMessages,
   validateAddCommentInput,
@@ -8,7 +9,9 @@ import {
   validateHandoff,
   validateKey,
   validateMergeInput,
+  validateNextAction,
   validateSaveInput,
+  validateStatus,
   validateSummary,
   validateTitle,
 } from "./validation.js";
@@ -23,6 +26,7 @@ const testConfig: Config = {
   maxCommentBytes: 10000,
   maxCommentsPerHandoff: 50,
   maxCommentAuthorLength: 100,
+  maxNextActionBytes: 2048,
 };
 
 describe("validateKey", () => {
@@ -271,6 +275,36 @@ Second answer`;
   });
 });
 
+describe("validateStatus", () => {
+  it("should accept valid statuses", () => {
+    for (const status of VALID_STATUSES) {
+      expect(validateStatus(status).valid).toBe(true);
+    }
+  });
+
+  it("should reject invalid status", () => {
+    const result = validateStatus("unknown");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Invalid status");
+  });
+});
+
+describe("validateNextAction", () => {
+  it("should accept valid next_action", () => {
+    expect(validateNextAction("Run tests", testConfig).valid).toBe(true);
+  });
+
+  it("should reject oversized next_action", () => {
+    const result = validateNextAction("x".repeat(2049), testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("exceeds maximum size");
+  });
+
+  it("should accept next_action at exact limit", () => {
+    expect(validateNextAction("x".repeat(2048), testConfig).valid).toBe(true);
+  });
+});
+
 describe("validateSaveInput", () => {
   const validInput = {
     key: "test-key",
@@ -330,6 +364,58 @@ describe("validateSaveInput", () => {
     const input = { ...validInput, from_project: "" };
     const result = validateSaveInput(input);
     expect(result.valid).toBe(true);
+  });
+
+  it("should accept valid optional metadata fields", () => {
+    const input = {
+      ...validInput,
+      message_count: 5,
+      conversation_bytes: 1000,
+      status: "completed",
+      next_action: "Deploy to production",
+    };
+    const result = validateSaveInput(input);
+    expect(result.valid).toBe(true);
+  });
+
+  it("should reject non-integer message_count", () => {
+    expect(validateSaveInput({ ...validInput, message_count: 1.5 }).valid).toBe(false);
+    expect(validateSaveInput({ ...validInput, message_count: "5" }).valid).toBe(false);
+  });
+
+  it("should reject negative message_count", () => {
+    const result = validateSaveInput({ ...validInput, message_count: -1 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("non-negative integer");
+  });
+
+  it("should reject non-integer conversation_bytes", () => {
+    expect(validateSaveInput({ ...validInput, conversation_bytes: 1.5 }).valid).toBe(false);
+    expect(validateSaveInput({ ...validInput, conversation_bytes: "100" }).valid).toBe(false);
+  });
+
+  it("should reject negative conversation_bytes", () => {
+    const result = validateSaveInput({ ...validInput, conversation_bytes: -1 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("non-negative integer");
+  });
+
+  it("should reject invalid status", () => {
+    const result = validateSaveInput({ ...validInput, status: "unknown" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Invalid status");
+  });
+
+  it("should reject non-string status", () => {
+    const result = validateSaveInput({ ...validInput, status: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should reject non-string next_action", () => {
+    const result = validateSaveInput({ ...validInput, next_action: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
   });
 });
 

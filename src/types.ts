@@ -12,6 +12,9 @@ export interface Comment {
   created_at: string;
 }
 
+/** Valid handoff status values */
+export type HandoffStatus = "active" | "completed" | "pending";
+
 export interface Handoff {
   key: string;
   title: string;
@@ -22,6 +25,14 @@ export interface Handoff {
   conversation: string;
   /** Comments attached to this handoff (populated on load) */
   comments?: Comment[];
+  /** Number of messages in the conversation */
+  message_count?: number;
+  /** Byte size of the conversation content */
+  conversation_bytes?: number;
+  /** Current status of the handoff */
+  status?: HandoffStatus;
+  /** Suggested next action for the receiver */
+  next_action?: string;
 }
 
 export interface HandoffSummary {
@@ -32,6 +43,14 @@ export interface HandoffSummary {
   created_at: string;
   summary: string;
   comment_count: number;
+  /** Number of messages in the conversation */
+  message_count?: number;
+  /** Byte size of the conversation content */
+  conversation_bytes?: number;
+  /** Current status of the handoff */
+  status?: HandoffStatus;
+  /** Suggested next action for the receiver */
+  next_action?: string;
 }
 
 export interface SaveInput {
@@ -41,6 +60,14 @@ export interface SaveInput {
   conversation: string;
   from_ai: string;
   from_project: string;
+  /** Number of messages in the conversation (auto-calculated if omitted) */
+  message_count?: number;
+  /** Byte size of the conversation content (auto-calculated if omitted) */
+  conversation_bytes?: number;
+  /** Current status of the handoff */
+  status?: HandoffStatus;
+  /** Suggested next action for the receiver */
+  next_action?: string;
 }
 
 export interface StorageStats {

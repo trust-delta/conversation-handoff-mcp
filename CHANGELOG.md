@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-15
+
+### Added
+
+- **Handoff Metadata**: New optional fields on `handoff_save` and `handoff_list` for richer context without loading full conversations
+  - `message_count`: Number of messages in the conversation (auto-calculated if omitted)
+  - `conversation_bytes`: Byte size of conversation content (auto-calculated if omitted)
+  - `status`: Handoff status — `"active"` (default), `"completed"`, or `"pending"`
+  - `next_action`: Suggested next action for the receiver (omitted when not set)
+- **Metadata Validators**: `validateStatus()` and `validateNextAction()` with byte size limit (`maxNextActionBytes`, default 2048)
+- **Config**: `HANDOFF_MAX_NEXT_ACTION_BYTES` environment variable for `next_action` size limit
+- 19 new tests (total: 270)
+
+### Changed
+
+- `handoff_list` output now includes metadata fields, enabling work resumption decisions without `handoff_load`
+- `handoff_merge` auto-calculates `message_count` and `conversation_bytes`, sets `status` to `"active"`, omits `next_action`
+- All new fields are optional — fully backward compatible
+
 ## [0.10.1] - 2026-03-14
 
 ### Changed

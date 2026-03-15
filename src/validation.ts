@@ -189,10 +189,43 @@ export function validateAddCommentInput(input: unknown): AddCommentInputValidati
 }
 
 // =============================================================================
+// Metadata Field Validators
+// =============================================================================
+
+/** Valid handoff status values */
+export const VALID_STATUSES: readonly HandoffStatus[] = ["active", "completed", "pending"] as const;
+
+/** Validate a handoff status value */
+export function validateStatus(status: string): ValidationResult {
+  if (!VALID_STATUSES.includes(status as HandoffStatus)) {
+    return {
+      valid: false,
+      error: `Invalid status: must be one of ${VALID_STATUSES.join(", ")}`,
+    };
+  }
+  return { valid: true };
+}
+
+/** Validate the next_action field against byte size limit */
+export function validateNextAction(
+  nextAction: string,
+  config: Config = defaultConfig
+): ValidationResult {
+  const bytes = Buffer.byteLength(nextAction, "utf8");
+  if (bytes > config.maxNextActionBytes) {
+    return {
+      valid: false,
+      error: `next_action exceeds maximum size (${config.maxNextActionBytes} bytes)`,
+    };
+  }
+  return { valid: true };
+}
+
+// =============================================================================
 // HTTP API Input Validation
 // =============================================================================
 
-import type { MergeInput, SaveInput } from "./types.js";
+import type { HandoffStatus, MergeInput, SaveInput } from "./types.js";
 
 /** Validation result for save input with type-safe narrowing */
 export type SaveInputValidationResult =
@@ -230,6 +263,47 @@ export function validateSaveInput(input: unknown): SaveInputValidationResult {
     }
     if (typeof obj[field] !== "string") {
       return { valid: false, error: `Field '${field}' must be a string` };
+    }
+  }
+
+  // Optional metadata fields
+  if ("message_count" in obj) {
+    if (
+      typeof obj.message_count !== "number" ||
+      !Number.isInteger(obj.message_count) ||
+      obj.message_count < 0
+    ) {
+      return { valid: false, error: "Field 'message_count' must be a non-negative integer" };
+    }
+  }
+
+  if ("conversation_bytes" in obj) {
+    if (
+      typeof obj.conversation_bytes !== "number" ||
+      !Number.isInteger(obj.conversation_bytes) ||
+      obj.conversation_bytes < 0
+    ) {
+      return { valid: false, error: "Field 'conversation_bytes' must be a non-negative integer" };
+    }
+  }
+
+  if ("status" in obj) {
+    if (typeof obj.status !== "string") {
+      return { valid: false, error: "Field 'status' must be a string" };
+    }
+    const statusResult = validateStatus(obj.status);
+    if (!statusResult.valid) {
+      return { valid: false, error: statusResult.error ?? "Invalid status" };
+    }
+  }
+
+  if ("next_action" in obj) {
+    if (typeof obj.next_action !== "string") {
+      return { valid: false, error: "Field 'next_action' must be a string" };
+    }
+    const nextActionResult = validateNextAction(obj.next_action);
+    if (!nextActionResult.valid) {
+      return { valid: false, error: nextActionResult.error ?? "Invalid next_action" };
     }
   }
 

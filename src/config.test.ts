@@ -134,6 +134,7 @@ describe("defaultConfig and connectionConfig", () => {
     expect(defaultConfig.maxTitleLength).toBeGreaterThan(0);
     expect(defaultConfig.maxKeyLength).toBeGreaterThan(0);
     expect(defaultConfig.keyPattern).toBeInstanceOf(RegExp);
+    expect(defaultConfig.maxNextActionBytes).toBe(2048);
   });
 
   it("should have valid connection config values", async () => {

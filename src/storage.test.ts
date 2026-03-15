@@ -19,6 +19,7 @@ const testConfig: Config = {
   maxCommentBytes: 10000,
   maxCommentsPerHandoff: 50,
   maxCommentAuthorLength: 100,
+  maxNextActionBytes: 2048,
 };
 
 describe("LocalStorage", () => {
@@ -126,6 +127,72 @@ describe("LocalStorage", () => {
       expect(loaded.data?.comments).toEqual([]);
     });
 
+    it("should auto-calculate message_count and conversation_bytes", async () => {
+      const result = await storage.save(validInput);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.message_count).toBe(2);
+      expect(loaded.data?.conversation_bytes).toBe(
+        Buffer.byteLength(validInput.conversation, "utf8")
+      );
+    });
+
+    it("should use explicitly provided message_count and conversation_bytes", async () => {
+      const result = await storage.save({
+        ...validInput,
+        message_count: 42,
+        conversation_bytes: 9999,
+      });
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.message_count).toBe(42);
+      expect(loaded.data?.conversation_bytes).toBe(9999);
+    });
+
+    it("should default status to 'active'", async () => {
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.status).toBe("active");
+    });
+
+    it("should use explicitly provided status", async () => {
+      await storage.save({ ...validInput, status: "completed" });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.status).toBe("completed");
+    });
+
+    it("should omit next_action when not provided", async () => {
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data && "next_action" in loaded.data).toBe(false);
+    });
+
+    it("should include next_action when explicitly provided", async () => {
+      await storage.save({ ...validInput, next_action: "Run tests" });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.next_action).toBe("Run tests");
+    });
+
+    it("should reject invalid status", async () => {
+      const result = await storage.save({
+        ...validInput,
+        status: "invalid" as "active",
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invalid status");
+    });
+
+    it("should reject oversized next_action", async () => {
+      const result = await storage.save({
+        ...validInput,
+        next_action: "x".repeat(2049),
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceeds maximum size");
+    });
+
     it("should not delete when updating existing key at capacity", async () => {
       // Fill up to max capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
@@ -174,6 +241,17 @@ describe("LocalStorage", () => {
       expect(summary?.summary).toBeDefined();
       expect(summary?.comment_count).toBe(0);
       expect(summary && "conversation" in summary).toBe(false);
+    });
+
+    it("should include metadata fields in summaries", async () => {
+      await storage.save({ ...validInput, status: "completed", next_action: "Deploy" });
+
+      const result = await storage.list();
+      const summary = result.data?.[0];
+      expect(summary?.message_count).toBe(2);
+      expect(summary?.conversation_bytes).toBe(Buffer.byteLength(validInput.conversation, "utf8"));
+      expect(summary?.status).toBe("completed");
+      expect(summary?.next_action).toBe("Deploy");
     });
 
     it("should include comment_count in summaries", async () => {
@@ -528,6 +606,21 @@ describe("LocalStorage", () => {
       const sameKey = result.data?.merged_key ?? "";
       const loaded = await storage.load(sameKey);
       expect(loaded.data?.from_ai).toBe("claude");
+    });
+
+    it("should set metadata fields on merged handoff", async () => {
+      await storage.save(createHandoff("h1", { status: "completed", next_action: "Do X" }));
+      await storage.save(createHandoff("h2", { status: "pending" }));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const mergedKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(mergedKey);
+      expect(loaded.data?.status).toBe("active");
+      expect(loaded.data?.message_count).toBeGreaterThan(0);
+      expect(loaded.data?.conversation_bytes).toBeGreaterThan(0);
+      expect(loaded.data && "next_action" in loaded.data).toBe(false);
     });
 
     it("should handle FIFO when at capacity after merge and protect source keys", async () => {

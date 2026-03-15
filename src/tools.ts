@@ -123,9 +123,41 @@ Omit sections that don't apply. Add custom sections if needed.`,
         .default("claude")
         .describe("Name of the source AI (e.g., 'claude', 'chatgpt')"),
       from_project: z.string().default("").describe("Name of the source project (optional)"),
+      message_count: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Number of messages in the conversation (auto-calculated if omitted)"),
+      conversation_bytes: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Byte size of the conversation content (auto-calculated if omitted)"),
+      status: z
+        .enum(["active", "completed", "pending"])
+        .optional()
+        .describe("Status of the handoff: 'active' (default), 'completed', or 'pending'"),
+      next_action: z
+        .string()
+        .optional()
+        .describe("Suggested next action for the receiver (e.g., 'Run tests and deploy')"),
     },
     async (
-      { key, title, format: _format, summary, conversation, from_ai, from_project },
+      {
+        key,
+        title,
+        format: _format,
+        summary,
+        conversation,
+        from_ai,
+        from_project,
+        message_count,
+        conversation_bytes,
+        status,
+        next_action,
+      },
       extra
     ) => {
       const audit = getAuditLogger();
@@ -149,6 +181,10 @@ Omit sections that don't apply. Add custom sections if needed.`,
         conversation,
         from_ai,
         from_project,
+        message_count,
+        conversation_bytes,
+        status,
+        next_action,
       });
 
       if (result.success) {
@@ -229,6 +265,10 @@ Omit sections that don't apply. Add custom sections if needed.`,
               from_project: z.string(),
               created_at: z.string(),
               comment_count: z.number(),
+              message_count: z.number().optional(),
+              conversation_bytes: z.number().optional(),
+              status: z.enum(["active", "completed", "pending"]).optional(),
+              next_action: z.string().optional(),
             })
           )
           .describe("List of handoffs"),

@@ -23,6 +23,8 @@ import {
   validateConversation,
   validateHandoff,
   validateKey,
+  validateNextAction,
+  validateStatus,
   validateSummary,
   validateTitle,
 } from "./validation.js";
@@ -129,12 +131,35 @@ export class LocalStorage implements Storage {
       return { success: false, error: validation.error };
     }
 
+    // Validate optional metadata fields
+    if (input.status !== undefined) {
+      const statusResult = validateStatus(input.status);
+      if (!statusResult.valid) {
+        return { success: false, error: statusResult.error };
+      }
+    }
+    if (input.next_action !== undefined) {
+      const nextActionResult = validateNextAction(input.next_action, this.config);
+      if (!nextActionResult.valid) {
+        return { success: false, error: nextActionResult.error };
+      }
+    }
+
     // Subtract old bytes and clear comments if overwriting existing key
     const existing = this.handoffs.get(input.key);
     if (existing) {
       this.cachedTotalBytes -= this.handoffBytes(existing);
       this.comments.delete(input.key);
     }
+
+    // Auto-calculate metadata fields
+    const messageCount =
+      input.message_count ?? splitConversationMessages(input.conversation).length;
+    const conversationBytes =
+      input.conversation_bytes ??
+      validation.inputSizes?.conversationBytes ??
+      Buffer.byteLength(input.conversation, "utf8");
+    const status = input.status ?? "active";
 
     const handoff: Handoff = {
       key: input.key,
@@ -144,6 +169,10 @@ export class LocalStorage implements Storage {
       created_at: new Date().toISOString(),
       summary: input.summary,
       conversation: input.conversation,
+      message_count: messageCount,
+      conversation_bytes: conversationBytes,
+      status,
+      ...(input.next_action !== undefined ? { next_action: input.next_action } : {}),
     };
 
     this.handoffs.set(input.key, handoff);
@@ -183,6 +212,10 @@ export class LocalStorage implements Storage {
       created_at: h.created_at,
       summary: h.summary,
       comment_count: this.comments.get(h.key)?.length ?? 0,
+      message_count: h.message_count,
+      conversation_bytes: h.conversation_bytes,
+      status: h.status,
+      ...(h.next_action !== undefined ? { next_action: h.next_action } : {}),
     }));
 
     return { success: true, data: summaries };
@@ -432,7 +465,11 @@ export class LocalStorage implements Storage {
     const existingMergeTarget = this.handoffs.get(mergedKey);
     if (existingMergeTarget) this.cachedTotalBytes -= this.handoffBytes(existingMergeTarget);
 
-    // Save merged handoff
+    // Save merged handoff with auto-calculated metadata
+    const mergedMessageCount = splitConversationMessages(mergedConversation).length;
+    const mergedConversationBytes =
+      convValidation.inputSizes?.conversationBytes ?? Buffer.byteLength(mergedConversation, "utf8");
+
     const mergedHandoff: Handoff = {
       key: mergedKey,
       title: mergedTitle,
@@ -441,6 +478,9 @@ export class LocalStorage implements Storage {
       created_at: new Date().toISOString(),
       summary: mergedSummary,
       conversation: mergedConversation,
+      message_count: mergedMessageCount,
+      conversation_bytes: mergedConversationBytes,
+      status: "active",
     };
 
     this.handoffs.set(mergedKey, mergedHandoff);

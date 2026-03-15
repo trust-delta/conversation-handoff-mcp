@@ -12,6 +12,7 @@ export interface Config {
   maxCommentBytes: number;
   maxCommentsPerHandoff: number;
   maxCommentAuthorLength: number;
+  maxNextActionBytes: number;
 }
 
 export interface PortRange {
@@ -87,6 +88,7 @@ export const defaultConfig: Config = {
   maxCommentBytes: parseEnvInt(process.env.HANDOFF_MAX_COMMENT_BYTES, 10_000),
   maxCommentsPerHandoff: parseEnvInt(process.env.HANDOFF_MAX_COMMENTS_PER_HANDOFF, 50),
   maxCommentAuthorLength: parseEnvInt(process.env.HANDOFF_MAX_COMMENT_AUTHOR_LENGTH, 100),
+  maxNextActionBytes: parseEnvInt(process.env.HANDOFF_MAX_NEXT_ACTION_BYTES, 2048),
 };
 
 export const connectionConfig: ConnectionConfig = {
