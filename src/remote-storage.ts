@@ -107,17 +107,21 @@ export class RemoteStorage implements Storage {
 
   /**
    * Send HTTP request to the server with automatic reconnection.
+   * Uses retryDepth to guard against infinite recursion as a safety net
+   * (tryReconnect already limits via maxReconnectAttempts).
    * @param method - HTTP method (GET, POST, DELETE)
    * @param path - API endpoint path
    * @param body - Optional request body for POST requests
    * @param saveInput - Optional save input for recovery on failure
+   * @param retryDepth - Current recursion depth (internal, prevents infinite retry loops)
    * @returns Storage result with data or error
    */
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
-    saveInput?: SaveInput
+    saveInput?: SaveInput,
+    retryDepth = 0
   ): Promise<StorageResult<T>> {
     const url = `${this.serverUrl}${path}`;
 
@@ -133,11 +137,12 @@ export class RemoteStorage implements Storage {
         signal: controller.signal,
       });
     } catch (error) {
-      // Connection failed - attempt reconnect and retry
-      const reconnected = await this.tryReconnect();
-      if (reconnected) {
-        // Retry the request with new server URL (new AbortController will be created)
-        return this.request(method, path, body, saveInput);
+      // Connection failed - attempt reconnect and retry (with depth limit as safety net)
+      if (retryDepth < this.maxReconnectAttempts) {
+        const reconnected = await this.tryReconnect();
+        if (reconnected) {
+          return this.request(method, path, body, saveInput, retryDepth + 1);
+        }
       }
 
       // Categorize error for better diagnostics

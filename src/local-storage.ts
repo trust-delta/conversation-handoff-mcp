@@ -435,37 +435,15 @@ export class LocalStorage implements Storage {
       }
     }
 
-    // Delete sources if requested (before saving to free capacity)
-    if (input.delete_sources) {
-      for (const key of input.keys) {
-        const src = this.handoffs.get(key);
-        if (src) this.cachedTotalBytes -= this.handoffBytes(src);
-        this.handoffs.delete(key);
-        this.comments.delete(key);
-      }
-    }
-
-    // 10. FIFO capacity check for new key (protect source keys when delete_sources=false)
-    const isNewKey = !this.handoffs.has(mergedKey);
-    if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
-      const protectedKeys = input.delete_sources ? new Set<string>() : keySet;
-      this.deleteOldestHandoff(protectedKeys);
-    }
-
-    // Generate or use provided title
+    // 10. Generate or use provided title (validate before any mutation)
     const mergedTitle = input.new_title || generateTitle(mergedSummary);
 
-    // Validate title
     const titleValidation = validateTitle(mergedTitle, this.config);
     if (!titleValidation.valid) {
       return { success: false, error: titleValidation.error };
     }
 
-    // Subtract old bytes if overwriting existing key
-    const existingMergeTarget = this.handoffs.get(mergedKey);
-    if (existingMergeTarget) this.cachedTotalBytes -= this.handoffBytes(existingMergeTarget);
-
-    // Save merged handoff with auto-calculated metadata
+    // 11. Build merged handoff (before any mutation to ensure rollback safety)
     const mergedMessageCount = splitConversationMessages(mergedConversation).length;
     const mergedConversationBytes =
       convValidation.inputSizes?.conversationBytes ?? Buffer.byteLength(mergedConversation, "utf8");
@@ -483,6 +461,28 @@ export class LocalStorage implements Storage {
       status: "active",
     };
 
+    // 12. Delete sources if requested (after validation, before save to free capacity)
+    if (input.delete_sources) {
+      for (const key of input.keys) {
+        const src = this.handoffs.get(key);
+        if (src) this.cachedTotalBytes -= this.handoffBytes(src);
+        this.handoffs.delete(key);
+        this.comments.delete(key);
+      }
+    }
+
+    // 13. FIFO capacity check for new key (protect source keys when delete_sources=false)
+    const isNewKey = !this.handoffs.has(mergedKey);
+    if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
+      const protectedKeys = input.delete_sources ? new Set<string>() : keySet;
+      this.deleteOldestHandoff(protectedKeys);
+    }
+
+    // 14. Subtract old bytes if overwriting existing key
+    const existingMergeTarget = this.handoffs.get(mergedKey);
+    if (existingMergeTarget) this.cachedTotalBytes -= this.handoffBytes(existingMergeTarget);
+
+    // 15. Save merged handoff (all validation passed, safe to mutate)
     this.handoffs.set(mergedKey, mergedHandoff);
     this.cachedTotalBytes += this.handoffBytes(mergedHandoff);
 

@@ -154,14 +154,19 @@ const NOOP_TIMER: AuditTimer = { elapsed: () => 0 };
 // Write Queue (async, non-blocking)
 // =============================================================================
 
+/** Maximum number of entries the write queue can hold before dropping oldest entries */
+const MAX_QUEUE_SIZE = 10_000;
+
 /**
  * Asynchronous write queue that buffers log entries and writes them
  * in order without blocking the caller.
+ * Drops oldest entries when the queue exceeds MAX_QUEUE_SIZE to prevent unbounded memory growth.
  */
 class WriteQueue {
   private queue: string[] = [];
   private flushing = false;
   private filePath: string;
+  private droppedCount = 0;
 
   /**
    * @param filePath - Path to the JSONL log file
@@ -172,9 +177,16 @@ class WriteQueue {
 
   /**
    * Enqueue a line to be written. Triggers an async flush if not already running.
+   * Drops oldest entries if the queue exceeds the size limit.
    * @param line - JSONL line to append
    */
   enqueue(line: string): void {
+    // Drop oldest entries if queue is full to prevent unbounded memory growth
+    if (this.queue.length >= MAX_QUEUE_SIZE) {
+      const dropCount = Math.floor(MAX_QUEUE_SIZE * 0.1); // Drop 10% to avoid frequent trimming
+      this.queue.splice(0, dropCount);
+      this.droppedCount += dropCount;
+    }
     this.queue.push(line);
     if (!this.flushing) {
       void this.flush();

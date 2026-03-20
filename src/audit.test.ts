@@ -377,3 +377,36 @@ describe("initAudit / getAuditLogger / resetAudit", () => {
     await logger.shutdown();
   });
 });
+
+describe("WriteQueue size limit", () => {
+  let auditDir: string;
+
+  beforeEach(() => {
+    auditDir = makeTmpDir();
+  });
+
+  afterEach(async () => {
+    resetAudit();
+    await rm(auditDir, { recursive: true, force: true });
+  });
+
+  it("should not crash when logging a large number of entries rapidly", async () => {
+    const logger = new AuditLogger(true, auditDir);
+    await logger.init();
+
+    // Rapidly log many entries to test queue bounds
+    for (let i = 0; i < 15000; i++) {
+      logger.logStorage({
+        event: "save",
+        key: `key-${i}`,
+        success: true,
+      });
+    }
+
+    // Should not throw or cause OOM - just drain and verify
+    await logger.shutdown();
+
+    const filePath = logger.getFilePath();
+    expect(filePath).toBeTruthy();
+  });
+});

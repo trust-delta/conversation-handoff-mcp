@@ -55,6 +55,30 @@ describe("RemoteStorage - advanced", () => {
       }
     });
 
+    it("should limit retry depth even when reconnect always succeeds", async () => {
+      const origRetryCount = connectionConfig.retryCount;
+      const origRetryInterval = connectionConfig.retryIntervalMs;
+      // Use a higher retryCount to verify depth limit works independently
+      (connectionConfig as { retryCount: number }).retryCount = 10;
+      (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = 0;
+
+      try {
+        // Reconnect always succeeds but fetch always fails
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+        const mockReconnect = vi.fn().mockResolvedValue("http://localhost:2000");
+        const storage = new RemoteStorage("http://localhost:1099", mockReconnect);
+        const result = await storage.list();
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("Failed to connect to server");
+        // Should be limited by maxReconnectAttempts (10), not infinite
+        expect(mockReconnect.mock.calls.length).toBeLessThanOrEqual(10);
+      } finally {
+        (connectionConfig as { retryCount: number }).retryCount = origRetryCount;
+        (connectionConfig as { retryIntervalMs: number }).retryIntervalMs = origRetryInterval;
+      }
+    });
+
     it("should not call reconnectFn when none is provided", async () => {
       globalThis.fetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 

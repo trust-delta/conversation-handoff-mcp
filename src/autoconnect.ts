@@ -133,6 +133,16 @@ export function startServerBackground(port: number): void {
     windowsHide: true,
   });
 
+  // Handle spawn errors (e.g., node not in PATH) to prevent silent failures
+  child.on("error", (err) => {
+    getAuditLogger().logConnection({
+      event: "server_spawn",
+      port,
+      success: false,
+    });
+    console.error(`[autoconnect] Failed to spawn server on port ${port}: ${err.message}`);
+  });
+
   child.unref();
 }
 

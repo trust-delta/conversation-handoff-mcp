@@ -583,6 +583,26 @@ describe("LocalStorage", () => {
       expect(result.error).toContain("already exists");
     });
 
+    it("should preserve source data if merge validation fails after source collection", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      // Try to merge with an invalid new_title (exceeding max length)
+      const longTitle = "x".repeat(testConfig.maxTitleLength + 1);
+      const result = await storage.merge({
+        ...baseMergeInput,
+        delete_sources: true,
+        new_title: longTitle,
+      });
+      expect(result.success).toBe(false);
+
+      // Source handoffs should NOT be deleted since merge failed at validation
+      const h1 = await storage.load("h1");
+      const h2 = await storage.load("h2");
+      expect(h1.success).toBe(true);
+      expect(h2.success).toBe(true);
+    });
+
     it("should combine from_ai when sources differ", async () => {
       await storage.save(createHandoff("h1", { from_ai: "claude" }));
       await storage.save(createHandoff("h2", { from_ai: "chatgpt" }));

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-03-21
+
+### Fixed
+
+- **RemoteStorage retry safety**: Added recursion depth limit to `request()` as defense-in-depth against infinite retry loops when reconnection succeeds but requests keep failing
+- **Merge transaction safety**: Moved title validation and handoff construction before source deletion in `merge()`, preventing data loss if validation fails after sources are deleted
+- **Audit WriteQueue memory bound**: Added `MAX_QUEUE_SIZE` (10,000 entries) to the audit log write queue, dropping oldest 10% when full to prevent unbounded memory growth under high load
+- **Server spawn error handling**: Added `child.on("error")` handler in `startServerBackground()` to catch and log spawn failures instead of failing silently
+
+### Changed
+
+- 3 new tests (total: 273)
+
 ## [0.11.0] - 2026-03-15
 
 ### Added
