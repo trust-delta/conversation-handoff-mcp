@@ -357,6 +357,35 @@ describe("HttpServer", () => {
       expect(response.status).toBe(404);
     });
 
+    it("should handle malformed URI-encoded keys gracefully", async () => {
+      // %ZZ is not a valid percent-encoding sequence
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/%ZZinvalid`);
+      // Should not crash with URIError; returns 404 since the key doesn't exist
+      expect(response.status).toBe(404);
+    });
+
+    it("should handle percent-encoded keys that decode to valid keys", async () => {
+      // "test-encoded" percent-encoded as "test%2Dencoded" should decode to "test-encoded"
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "test-encoded",
+          title: "Encoded Key Test",
+          summary: "Summary",
+          conversation: "## User\nHello\n\n## Assistant\nHi",
+          from_ai: "claude",
+          from_project: "test",
+        }),
+      });
+
+      // Access with percent-encoded hyphen (%2D = '-')
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/test%2Dencoded`);
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as { key: string };
+      expect(data.key).toBe("test-encoded");
+    });
+
     it("should reject invalid max_messages parameter", async () => {
       // First save a handoff
       await fetch(`http://127.0.0.1:${testPort}/handoff`, {

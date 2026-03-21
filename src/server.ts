@@ -22,6 +22,19 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "package.json"
 const VERSION = packageJson.version;
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/** Safely decode a URI component, returning the original string if malformed */
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 
@@ -177,8 +190,8 @@ export class HttpServer {
     if (commentIdMatch?.[1] && commentIdMatch[2]) {
       return {
         path: "/handoff/:key/comments/:commentId",
-        key: decodeURIComponent(commentIdMatch[1]),
-        commentId: decodeURIComponent(commentIdMatch[2]),
+        key: safeDecodeURIComponent(commentIdMatch[1]),
+        commentId: safeDecodeURIComponent(commentIdMatch[2]),
         query: urlObj.searchParams,
       };
     }
@@ -188,7 +201,7 @@ export class HttpServer {
     if (commentsMatch?.[1]) {
       return {
         path: "/handoff/:key/comments",
-        key: decodeURIComponent(commentsMatch[1]),
+        key: safeDecodeURIComponent(commentsMatch[1]),
         query: urlObj.searchParams,
       };
     }
@@ -198,7 +211,7 @@ export class HttpServer {
     if (handoffMatch?.[1]) {
       return {
         path: "/handoff/:key",
-        key: decodeURIComponent(handoffMatch[1]),
+        key: safeDecodeURIComponent(handoffMatch[1]),
         query: urlObj.searchParams,
       };
     }
@@ -471,6 +484,13 @@ export class HttpServer {
    * @returns Promise resolving to the Node.js Server instance
    */
   start(): Promise<Server> {
+    // Register signal handlers before server creation so they can be cleaned up on failure
+    const cleanup = () => {
+      this.shutdown();
+    };
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
         this.handleRequest(req, res).catch((error) => {
@@ -515,6 +535,10 @@ export class HttpServer {
       });
 
       this.server.on("error", (error: NodeJS.ErrnoException) => {
+        // Clean up signal handlers on startup failure
+        process.removeListener("SIGINT", cleanup);
+        process.removeListener("SIGTERM", cleanup);
+
         if (error.code === "EADDRINUSE") {
           console.error(`Error: Port ${this.port} is already in use`);
           reject(error);
@@ -522,13 +546,6 @@ export class HttpServer {
         }
         throw error;
       });
-
-      // Cleanup on process exit
-      const cleanup = () => {
-        this.shutdown();
-      };
-      process.on("SIGINT", cleanup);
-      process.on("SIGTERM", cleanup);
     });
   }
 }
