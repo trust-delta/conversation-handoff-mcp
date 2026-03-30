@@ -29,6 +29,10 @@ MCP server for transferring conversation context between AI chats or different p
 - **Lightweight API**: Returns only summaries when listing to save context
 - **Auto-Generated Keys (v0.4.0+)**: Key and title are now optional in `handoff_save`
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/conversation-handoff-mcp).
+
 ## Installation
 
 Works with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, and other MCP clients.
