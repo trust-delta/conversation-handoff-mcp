@@ -230,6 +230,29 @@ describe("LocalStorage", () => {
       expect(result.error).toContain("Too many tags");
     });
 
+    it("should not FIFO-delete when validation fails at capacity", async () => {
+      // Fill up to max capacity
+      for (let i = 0; i < testConfig.maxHandoffs; i++) {
+        await storage.save({
+          ...validInput,
+          key: `handoff-${i}`,
+          title: `Handoff ${i}`,
+        });
+      }
+
+      // Try to save with invalid tags - should fail without deleting anything
+      const result = await storage.save({
+        ...validInput,
+        key: "new-key",
+        tags: ["has spaces"],
+      });
+      expect(result.success).toBe(false);
+
+      // All original keys should still exist (no FIFO deletion occurred)
+      const list = await storage.list();
+      expect(list.data?.length).toBe(testConfig.maxHandoffs);
+    });
+
     it("should not delete when updating existing key at capacity", async () => {
       // Fill up to max capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
@@ -1090,6 +1113,23 @@ describe("LocalStorage", () => {
       const result = await storage.search({ tags: ["auth"] });
       expect(result.data?.length).toBe(1);
       expect(result.data?.[0]?.key).toBe("h2");
+    });
+
+    it("should normalize search tags to lowercase (standalone parity)", async () => {
+      await storage.save({ ...validInput, tags: ["auth"] });
+
+      // Uppercase search should still match (normalized internally)
+      const result = await storage.search({ tags: ["Auth"] });
+      expect(result.data?.length).toBe(1);
+    });
+
+    it("should clamp limit to valid range", async () => {
+      await storage.save({ ...validInput, key: "h1" });
+      await storage.save({ ...validInput, key: "h2" });
+
+      // limit: 0 should be clamped to 1
+      const result = await storage.search({ limit: 0 });
+      expect(result.data?.length).toBe(1);
     });
   });
 });

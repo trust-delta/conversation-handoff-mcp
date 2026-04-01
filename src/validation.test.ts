@@ -762,6 +762,38 @@ describe("validateSearchInput", () => {
     expect(result.valid).toBe(false);
     expect(result.error).toContain("must not exceed 100");
   });
+
+  it("should reject invalid ISO date for created_after", () => {
+    const result = validateSearchInput({ created_after: "not-a-date" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("valid ISO date");
+  });
+
+  it("should reject invalid ISO date for created_before", () => {
+    const result = validateSearchInput({ created_before: "zzz" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("valid ISO date");
+  });
+
+  it("should accept valid ISO dates", () => {
+    const result = validateSearchInput({
+      created_after: "2026-01-01T00:00:00Z",
+      created_before: "2026-12-31T23:59:59Z",
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("should reject empty tag in search tags", () => {
+    const result = validateSearchInput({ tags: [""] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("cannot be empty");
+  });
+
+  it("should reject tag with spaces in search", () => {
+    const result = validateSearchInput({ tags: ["has spaces"] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("invalid characters");
+  });
 });
 
 describe("validateKey - reserved keys", () => {

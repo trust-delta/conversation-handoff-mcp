@@ -103,30 +103,20 @@ export class LocalStorage implements Storage {
    * @returns Result with success message or error
    */
   async save(input: SaveInput): Promise<StorageResult<{ message: string }>> {
-    // FIFO: Delete oldest handoff if at capacity (for new keys only)
+    // Validate ALL fields before any mutation (FIFO deletion must come after).
+    // For capacity check: new keys at capacity will trigger FIFO deletion later,
+    // so we don't count them as over-capacity here.
     const isNewKey = !this.handoffs.has(input.key);
-    if (isNewKey && this.handoffs.size >= this.config.maxHandoffs) {
-      const deletedKey = this.deleteOldestHandoff();
-      if (deletedKey) {
-        getAuditLogger().logStorage({
-          event: "save",
-          key: input.key,
-          fifoDeleted: true,
-          deletedKey,
-          capacityBefore: this.config.maxHandoffs,
-          capacityAfter: this.handoffs.size,
-          success: true,
-        });
-      }
-    }
+    const willFifoDelete = isNewKey && this.handoffs.size >= this.config.maxHandoffs;
+    const effectiveCount = willFifoDelete ? this.handoffs.size - 1 : this.handoffs.size;
 
     const validation = validateHandoff(
       input.key,
       input.title,
       input.summary,
       input.conversation,
-      this.handoffs.size,
-      this.handoffs.has(input.key),
+      effectiveCount,
+      !isNewKey,
       this.config
     );
 
@@ -154,6 +144,22 @@ export class LocalStorage implements Storage {
         return { success: false, error: tagsResult.error };
       }
       input.tags = normalized;
+    }
+
+    // FIFO: Delete oldest handoff if at capacity (only after all validation passes)
+    if (willFifoDelete) {
+      const deletedKey = this.deleteOldestHandoff();
+      if (deletedKey) {
+        getAuditLogger().logStorage({
+          event: "save",
+          key: input.key,
+          fifoDeleted: true,
+          deletedKey,
+          capacityBefore: this.config.maxHandoffs,
+          capacityAfter: this.handoffs.size,
+          success: true,
+        });
+      }
     }
 
     // Subtract old bytes and clear comments if overwriting existing key
@@ -338,21 +344,24 @@ export class LocalStorage implements Storage {
    * @returns Result with matching handoff summaries
    */
   async search(input: SearchInput): Promise<StorageResult<HandoffSummary[]>> {
-    const limit = input.limit ?? 20;
+    // Normalize input to match storage conventions (same as HTTP validation layer)
+    const tags = input.tags ? normalizeTags(input.tags) : undefined;
+    const tagsAll = input.tags_all ? normalizeTags(input.tags_all) : undefined;
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
     const results: HandoffSummary[] = [];
     const queryLower = input.query?.toLowerCase();
 
     for (const h of this.handoffs.values()) {
       // Filter: tags (ANY match)
-      if (input.tags && input.tags.length > 0) {
+      if (tags && tags.length > 0) {
         const handoffTags = h.tags ?? [];
-        if (!input.tags.some((t) => handoffTags.includes(t))) continue;
+        if (!tags.some((t) => handoffTags.includes(t))) continue;
       }
 
       // Filter: tags_all (ALL must match)
-      if (input.tags_all && input.tags_all.length > 0) {
+      if (tagsAll && tagsAll.length > 0) {
         const handoffTags = h.tags ?? [];
-        if (!input.tags_all.every((t) => handoffTags.includes(t))) continue;
+        if (!tagsAll.every((t) => handoffTags.includes(t))) continue;
       }
 
       // Filter: query (case-insensitive substring in title + summary)
