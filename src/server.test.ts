@@ -435,6 +435,99 @@ describe("HttpServer", () => {
   });
 
   // Shutdown test must run last since it closes the server
+  describe("Search endpoint", () => {
+    it("should search handoffs by tags", async () => {
+      // Save handoffs with tags
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "search-tag-1",
+          title: "Auth Feature",
+          summary: "Auth related work",
+          conversation: "Test conversation",
+          from_ai: "claude",
+          from_project: "project-a",
+          tags: ["auth", "feature"],
+        }),
+      });
+
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "search-tag-2",
+          title: "Deploy Fix",
+          summary: "Deploy pipeline fix",
+          conversation: "Test conversation",
+          from_ai: "claude",
+          from_project: "project-b",
+          tags: ["deploy"],
+        }),
+      });
+
+      // Search by tag
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: ["auth"] }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as Array<{ key: string; tags: string[] }>;
+      expect(data.length).toBeGreaterThanOrEqual(1);
+      expect(data.some((h) => h.key === "search-tag-1")).toBe(true);
+      expect(data.some((h) => h.key === "search-tag-2")).toBe(false);
+    });
+
+    it("should search by text query", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "auth" }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as Array<{ key: string }>;
+      expect(data.some((h) => h.key === "search-tag-1")).toBe(true);
+    });
+
+    it("should return empty array when no matches", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: ["nonexistent-tag"] }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as Array<{ key: string }>;
+      expect(data).toEqual([]);
+    });
+
+    it("should reject invalid search input", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: "not-an-array" }),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("should reject invalid JSON", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not-json",
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("should include tags in list response", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`);
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as Array<{ key: string; tags?: string[] }>;
+      const withTags = data.find((h) => h.key === "search-tag-1");
+      expect(withTags?.tags).toEqual(["auth", "feature"]);
+    });
+  });
+
   describe("Shutdown endpoint", () => {
     it("should respond to POST /shutdown with success", async () => {
       // Mock process.exit to prevent test runner from exiting

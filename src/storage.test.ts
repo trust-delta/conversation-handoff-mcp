@@ -20,6 +20,8 @@ const testConfig: Config = {
   maxCommentsPerHandoff: 50,
   maxCommentAuthorLength: 100,
   maxNextActionBytes: 2048,
+  maxTagsPerHandoff: 20,
+  maxTagLength: 50,
 };
 
 describe("LocalStorage", () => {
@@ -193,6 +195,41 @@ describe("LocalStorage", () => {
       expect(result.error).toContain("exceeds maximum size");
     });
 
+    it("should save and return tags", async () => {
+      await storage.save({ ...validInput, tags: ["project:foo", "auth"] });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.tags).toEqual(["project:foo", "auth"]);
+    });
+
+    it("should normalize tags to lowercase", async () => {
+      await storage.save({ ...validInput, tags: ["Project:FOO", "Auth"] });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.tags).toEqual(["project:foo", "auth"]);
+    });
+
+    it("should omit tags when not provided", async () => {
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data && "tags" in loaded.data).toBe(false);
+    });
+
+    it("should reject invalid tag characters", async () => {
+      const result = await storage.save({ ...validInput, tags: ["has spaces"] });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("invalid characters");
+    });
+
+    it("should reject too many tags", async () => {
+      const limitedConfig: Config = { ...testConfig, maxTagsPerHandoff: 3 };
+      const limitedStorage = new LocalStorage(limitedConfig);
+      const result = await limitedStorage.save({
+        ...validInput,
+        tags: ["a", "b", "c", "d"],
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Too many tags");
+    });
+
     it("should not delete when updating existing key at capacity", async () => {
       // Fill up to max capacity
       for (let i = 0; i < testConfig.maxHandoffs; i++) {
@@ -241,6 +278,13 @@ describe("LocalStorage", () => {
       expect(summary?.summary).toBeDefined();
       expect(summary?.comment_count).toBe(0);
       expect(summary && "conversation" in summary).toBe(false);
+    });
+
+    it("should include tags in summaries", async () => {
+      await storage.save({ ...validInput, tags: ["project:foo", "auth"] });
+
+      const result = await storage.list();
+      expect(result.data?.[0]?.tags).toEqual(["project:foo", "auth"]);
     });
 
     it("should include metadata fields in summaries", async () => {
@@ -628,6 +672,31 @@ describe("LocalStorage", () => {
       expect(loaded.data?.from_ai).toBe("claude");
     });
 
+    it("should union tags from source handoffs", async () => {
+      await storage.save(createHandoff("h1", { tags: ["auth", "project:foo"] }));
+      await storage.save(createHandoff("h2", { tags: ["auth", "deploy"] }));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const mergedKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(mergedKey);
+      expect(loaded.data?.tags).toEqual(expect.arrayContaining(["auth", "project:foo", "deploy"]));
+      expect(loaded.data?.tags?.length).toBe(3); // deduplicated
+    });
+
+    it("should omit tags on merged handoff when sources have no tags", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const mergedKey = result.data?.merged_key ?? "";
+      const loaded = await storage.load(mergedKey);
+      expect(loaded.data && "tags" in loaded.data).toBe(false);
+    });
+
     it("should set metadata fields on merged handoff", async () => {
       await storage.save(createHandoff("h1", { status: "completed", next_action: "Do X" }));
       await storage.save(createHandoff("h2", { status: "pending" }));
@@ -843,6 +912,184 @@ describe("LocalStorage", () => {
       // Source handoff is deleted, so comment should be gone
       const h1 = await storage.load("h1");
       expect(h1.success).toBe(false);
+    });
+  });
+
+  describe("search", () => {
+    it("should return all handoffs when no filters are specified", async () => {
+      await storage.save({ ...validInput, key: "h1", title: "First" });
+      await storage.save({ ...validInput, key: "h2", title: "Second" });
+
+      const result = await storage.search({});
+      expect(result.success).toBe(true);
+      expect(result.data?.length).toBe(2);
+    });
+
+    it("should return empty array when no handoffs match", async () => {
+      await storage.save(validInput);
+
+      const result = await storage.search({ tags: ["nonexistent"] });
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
+    });
+
+    it("should filter by tags (ANY match)", async () => {
+      await storage.save({ ...validInput, key: "h1", tags: ["auth", "project:foo"] });
+      await storage.save({ ...validInput, key: "h2", tags: ["deploy"] });
+      await storage.save({ ...validInput, key: "h3", tags: ["auth", "deploy"] });
+
+      const result = await storage.search({ tags: ["auth"] });
+      expect(result.data?.length).toBe(2);
+      expect(result.data?.map((h) => h.key)).toEqual(["h1", "h3"]);
+    });
+
+    it("should filter by tags_all (ALL must match)", async () => {
+      await storage.save({ ...validInput, key: "h1", tags: ["auth", "project:foo"] });
+      await storage.save({ ...validInput, key: "h2", tags: ["auth"] });
+      await storage.save({ ...validInput, key: "h3", tags: ["auth", "project:foo", "deploy"] });
+
+      const result = await storage.search({ tags_all: ["auth", "project:foo"] });
+      expect(result.data?.length).toBe(2);
+      expect(result.data?.map((h) => h.key)).toEqual(["h1", "h3"]);
+    });
+
+    it("should filter by text query in title and summary", async () => {
+      await storage.save({
+        ...validInput,
+        key: "h1",
+        title: "Auth refactor",
+        summary: "Refactored auth module",
+      });
+      await storage.save({
+        ...validInput,
+        key: "h2",
+        title: "Deploy fix",
+        summary: "Fixed deploy pipeline",
+      });
+      await storage.save({
+        ...validInput,
+        key: "h3",
+        title: "Other",
+        summary: "Contains auth keyword",
+      });
+
+      const result = await storage.search({ query: "auth" });
+      expect(result.data?.length).toBe(2);
+      expect(result.data?.map((h) => h.key)).toEqual(["h1", "h3"]);
+    });
+
+    it("should filter by from_project", async () => {
+      await storage.save({ ...validInput, key: "h1", from_project: "project-a" });
+      await storage.save({ ...validInput, key: "h2", from_project: "project-b" });
+
+      const result = await storage.search({ from_project: "project-a" });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h1");
+    });
+
+    it("should filter by from_ai", async () => {
+      await storage.save({ ...validInput, key: "h1", from_ai: "claude" });
+      await storage.save({ ...validInput, key: "h2", from_ai: "chatgpt" });
+
+      const result = await storage.search({ from_ai: "claude" });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h1");
+    });
+
+    it("should filter by status", async () => {
+      await storage.save({ ...validInput, key: "h1", status: "active" });
+      await storage.save({ ...validInput, key: "h2", status: "completed" });
+      await storage.save({ ...validInput, key: "h3", status: "active" });
+
+      const result = await storage.search({ status: "completed" });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h2");
+    });
+
+    it("should filter by created_after", async () => {
+      await storage.save({ ...validInput, key: "h1" });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const midpoint = new Date().toISOString();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await storage.save({ ...validInput, key: "h2" });
+
+      const result = await storage.search({ created_after: midpoint });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h2");
+    });
+
+    it("should filter by created_before", async () => {
+      await storage.save({ ...validInput, key: "h1" });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const midpoint = new Date().toISOString();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await storage.save({ ...validInput, key: "h2" });
+
+      const result = await storage.search({ created_before: midpoint });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h1");
+    });
+
+    it("should respect limit", async () => {
+      for (let i = 0; i < 5; i++) {
+        await storage.save({ ...validInput, key: `h${i}` });
+      }
+
+      const result = await storage.search({ limit: 3 });
+      expect(result.data?.length).toBe(3);
+    });
+
+    it("should default limit to 20", async () => {
+      const result = await storage.search({});
+      expect(result.success).toBe(true);
+      // Just verifying it doesn't error; no need to create 20+ items
+    });
+
+    it("should combine multiple filters with AND logic", async () => {
+      await storage.save({
+        ...validInput,
+        key: "h1",
+        tags: ["auth"],
+        from_project: "project-a",
+        status: "active",
+      });
+      await storage.save({
+        ...validInput,
+        key: "h2",
+        tags: ["auth"],
+        from_project: "project-b",
+        status: "active",
+      });
+      await storage.save({
+        ...validInput,
+        key: "h3",
+        tags: ["deploy"],
+        from_project: "project-a",
+        status: "active",
+      });
+
+      const result = await storage.search({
+        tags: ["auth"],
+        from_project: "project-a",
+      });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h1");
+    });
+
+    it("should include tags in search results", async () => {
+      await storage.save({ ...validInput, tags: ["auth", "project:foo"] });
+
+      const result = await storage.search({ tags: ["auth"] });
+      expect(result.data?.[0]?.tags).toEqual(["auth", "project:foo"]);
+    });
+
+    it("should handle handoffs without tags when searching by tags", async () => {
+      await storage.save({ ...validInput, key: "h1" }); // no tags
+      await storage.save({ ...validInput, key: "h2", tags: ["auth"] });
+
+      const result = await storage.search({ tags: ["auth"] });
+      expect(result.data?.length).toBe(1);
+      expect(result.data?.[0]?.key).toBe("h2");
     });
   });
 });

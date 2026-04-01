@@ -13,12 +13,14 @@ import type {
   MergeInput,
   MergeResult,
   SaveInput,
+  SearchInput,
   Storage,
   StorageResult,
   StorageStats,
 } from "./types.js";
 import {
   formatBytes,
+  normalizeTags,
   splitConversationMessages,
   validateConversation,
   validateHandoff,
@@ -26,6 +28,7 @@ import {
   validateNextAction,
   validateStatus,
   validateSummary,
+  validateTags,
   validateTitle,
 } from "./validation.js";
 
@@ -144,6 +147,14 @@ export class LocalStorage implements Storage {
         return { success: false, error: nextActionResult.error };
       }
     }
+    if (input.tags !== undefined) {
+      const normalized = normalizeTags(input.tags);
+      const tagsResult = validateTags(normalized, this.config);
+      if (!tagsResult.valid) {
+        return { success: false, error: tagsResult.error };
+      }
+      input.tags = normalized;
+    }
 
     // Subtract old bytes and clear comments if overwriting existing key
     const existing = this.handoffs.get(input.key);
@@ -173,6 +184,7 @@ export class LocalStorage implements Storage {
       conversation_bytes: conversationBytes,
       status,
       ...(input.next_action !== undefined ? { next_action: input.next_action } : {}),
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
     };
 
     this.handoffs.set(input.key, handoff);
@@ -204,19 +216,9 @@ export class LocalStorage implements Storage {
    * @returns Result with array of handoff summaries
    */
   async list(): Promise<StorageResult<HandoffSummary[]>> {
-    const summaries: HandoffSummary[] = Array.from(this.handoffs.values()).map((h) => ({
-      key: h.key,
-      title: h.title,
-      from_ai: h.from_ai,
-      from_project: h.from_project,
-      created_at: h.created_at,
-      summary: h.summary,
-      comment_count: this.comments.get(h.key)?.length ?? 0,
-      message_count: h.message_count,
-      conversation_bytes: h.conversation_bytes,
-      status: h.status,
-      ...(h.next_action !== undefined ? { next_action: h.next_action } : {}),
-    }));
+    const summaries: HandoffSummary[] = Array.from(this.handoffs.values()).map((h) =>
+      this.toSummary(h)
+    );
 
     return { success: true, data: summaries };
   }
@@ -310,6 +312,80 @@ export class LocalStorage implements Storage {
         },
       },
     };
+  }
+
+  /** Build a HandoffSummary from a Handoff */
+  private toSummary(h: Handoff): HandoffSummary {
+    return {
+      key: h.key,
+      title: h.title,
+      from_ai: h.from_ai,
+      from_project: h.from_project,
+      created_at: h.created_at,
+      summary: h.summary,
+      comment_count: this.comments.get(h.key)?.length ?? 0,
+      message_count: h.message_count,
+      conversation_bytes: h.conversation_bytes,
+      status: h.status,
+      ...(h.next_action !== undefined ? { next_action: h.next_action } : {}),
+      ...(h.tags !== undefined ? { tags: h.tags } : {}),
+    };
+  }
+
+  /**
+   * Search handoffs by multiple criteria (AND-combined).
+   * @param input - Search filters
+   * @returns Result with matching handoff summaries
+   */
+  async search(input: SearchInput): Promise<StorageResult<HandoffSummary[]>> {
+    const limit = input.limit ?? 20;
+    const results: HandoffSummary[] = [];
+    const queryLower = input.query?.toLowerCase();
+
+    for (const h of this.handoffs.values()) {
+      // Filter: tags (ANY match)
+      if (input.tags && input.tags.length > 0) {
+        const handoffTags = h.tags ?? [];
+        if (!input.tags.some((t) => handoffTags.includes(t))) continue;
+      }
+
+      // Filter: tags_all (ALL must match)
+      if (input.tags_all && input.tags_all.length > 0) {
+        const handoffTags = h.tags ?? [];
+        if (!input.tags_all.every((t) => handoffTags.includes(t))) continue;
+      }
+
+      // Filter: query (case-insensitive substring in title + summary)
+      if (queryLower) {
+        if (
+          !h.title.toLowerCase().includes(queryLower) &&
+          !h.summary.toLowerCase().includes(queryLower)
+        ) {
+          continue;
+        }
+      }
+
+      // Filter: from_project (exact)
+      if (input.from_project !== undefined && h.from_project !== input.from_project) continue;
+
+      // Filter: from_ai (exact)
+      if (input.from_ai !== undefined && h.from_ai !== input.from_ai) continue;
+
+      // Filter: status (exact)
+      if (input.status && h.status !== input.status) continue;
+
+      // Filter: created_after (ISO string comparison)
+      if (input.created_after && h.created_at < input.created_after) continue;
+
+      // Filter: created_before (ISO string comparison)
+      if (input.created_before && h.created_at >= input.created_before) continue;
+
+      results.push(this.toSummary(h));
+
+      if (results.length >= limit) break;
+    }
+
+    return { success: true, data: results };
   }
 
   /**
@@ -448,6 +524,15 @@ export class LocalStorage implements Storage {
     const mergedConversationBytes =
       convValidation.inputSizes?.conversationBytes ?? Buffer.byteLength(mergedConversation, "utf8");
 
+    // Union tags from all sources (deduplicated)
+    const mergedTagsSet = new Set<string>();
+    for (const h of sorted) {
+      if (h.tags) {
+        for (const tag of h.tags) mergedTagsSet.add(tag);
+      }
+    }
+    const mergedTags = mergedTagsSet.size > 0 ? [...mergedTagsSet] : undefined;
+
     const mergedHandoff: Handoff = {
       key: mergedKey,
       title: mergedTitle,
@@ -459,6 +544,7 @@ export class LocalStorage implements Storage {
       message_count: mergedMessageCount,
       conversation_bytes: mergedConversationBytes,
       status: "active",
+      ...(mergedTags !== undefined ? { tags: mergedTags } : {}),
     };
 
     // 12. Delete sources if requested (after validation, before save to free capacity)

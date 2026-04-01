@@ -8,6 +8,7 @@ export type {
   Handoff,
   HandoffSummary,
   SaveInput,
+  SearchInput,
   StorageStats,
   MergeInput,
   MergeResult,
