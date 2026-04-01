@@ -12,6 +12,7 @@ import {
   validateAddCommentInput,
   validateMergeInput,
   validateSaveInput,
+  validateSearchInput,
 } from "./validation.js";
 
 // Read version from package.json
@@ -206,6 +207,11 @@ export class HttpServer {
       };
     }
 
+    // Match /handoff/search (before generic /handoff/:key to avoid treating "search" as a key)
+    if (pathname === "/handoff/search") {
+      return { path: "/handoff/search", query: urlObj.searchParams };
+    }
+
     // Match /handoff/:key pattern
     const handoffMatch = pathname.match(/^\/handoff\/([^/]+)$/);
     if (handoffMatch?.[1]) {
@@ -293,6 +299,26 @@ export class HttpServer {
     }
 
     try {
+      // POST /handoff/search - Search handoffs
+      if (method === "POST" && path === "/handoff/search") {
+        const rawInput = await this.parseJsonBody(req, res);
+        if (rawInput === null) return;
+
+        const validation = validateSearchInput(rawInput);
+        if (!validation.valid) {
+          this.sendJson(res, 400, { error: validation.error });
+          return;
+        }
+
+        const result = await this.storage.search(validation.data);
+        if (result.success) {
+          this.sendJson(res, 200, result.data);
+        } else {
+          this.sendJson(res, 500, { error: result.error });
+        }
+        return;
+      }
+
       // POST /handoff/merge - Merge handoffs
       if (method === "POST" && path === "/handoff/:key" && key === "merge") {
         const rawInput = await this.parseJsonBody(req, res);
@@ -508,6 +534,7 @@ export class HttpServer {
         console.log("  GET    /handoff/:key  - Load a specific handoff");
         console.log("  DELETE /handoff/:key  - Delete a specific handoff");
         console.log("  DELETE /handoff       - Delete all handoffs");
+        console.log("  POST   /handoff/search - Search handoffs");
         console.log("  POST   /shutdown      - Graceful server shutdown");
         console.log("  GET    /stats         - Get storage statistics");
         console.log("");

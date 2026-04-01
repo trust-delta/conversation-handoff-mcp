@@ -27,7 +27,7 @@ export interface ValidationResult {
 }
 
 /** Reserved keys that conflict with API route paths */
-const RESERVED_KEYS = new Set(["merge"]);
+const RESERVED_KEYS = new Set(["merge", "search"]);
 
 // =============================================================================
 // Field Validators
@@ -222,10 +222,47 @@ export function validateNextAction(
 }
 
 // =============================================================================
+// Tag Validation
+// =============================================================================
+
+/** Pattern for valid tag names: lowercase alphanumeric, hyphens, underscores, colons */
+const TAG_PATTERN = /^[a-z0-9_:-]+$/;
+
+/** Validate an array of tags against config limits and pattern */
+export function validateTags(tags: string[], config: Config = defaultConfig): ValidationResult {
+  if (tags.length > config.maxTagsPerHandoff) {
+    return { valid: false, error: `Too many tags (max: ${config.maxTagsPerHandoff})` };
+  }
+  for (const tag of tags) {
+    if (tag.length === 0) {
+      return { valid: false, error: "Tags cannot be empty strings" };
+    }
+    if (tag.length > config.maxTagLength) {
+      return {
+        valid: false,
+        error: `Tag "${tag}" exceeds maximum length (${config.maxTagLength} chars)`,
+      };
+    }
+    if (!TAG_PATTERN.test(tag)) {
+      return {
+        valid: false,
+        error: `Tag "${tag}" contains invalid characters (allowed: lowercase alphanumeric, hyphens, underscores, colons)`,
+      };
+    }
+  }
+  return { valid: true };
+}
+
+/** Normalize tags to lowercase */
+export function normalizeTags(tags: string[]): string[] {
+  return tags.map((t) => t.toLowerCase());
+}
+
+// =============================================================================
 // HTTP API Input Validation
 // =============================================================================
 
-import type { HandoffStatus, MergeInput, SaveInput } from "./types.js";
+import type { HandoffStatus, MergeInput, SaveInput, SearchInput } from "./types.js";
 
 /** Validation result for save input with type-safe narrowing */
 export type SaveInputValidationResult =
@@ -307,6 +344,24 @@ export function validateSaveInput(input: unknown): SaveInputValidationResult {
     }
   }
 
+  if ("tags" in obj) {
+    if (!Array.isArray(obj.tags)) {
+      return { valid: false, error: "Field 'tags' must be an array" };
+    }
+    for (const tag of obj.tags) {
+      if (typeof tag !== "string") {
+        return { valid: false, error: "Each element in 'tags' must be a string" };
+      }
+    }
+    const normalized = normalizeTags(obj.tags as string[]);
+    const tagsResult = validateTags(normalized);
+    if (!tagsResult.valid) {
+      return { valid: false, error: tagsResult.error ?? "Invalid tags" };
+    }
+    // Replace with normalized tags in the data
+    obj.tags = normalized;
+  }
+
   return { valid: true, data: obj as unknown as SaveInput };
 }
 
@@ -386,6 +441,74 @@ export function validateMergeInput(input: unknown): MergeInputValidationResult {
   }
 
   return { valid: true, data: obj as unknown as MergeInput };
+}
+
+// =============================================================================
+// Search Input Validation
+// =============================================================================
+
+/** Validation result for search input with type-safe narrowing */
+export type SearchInputValidationResult =
+  | { valid: true; data: SearchInput }
+  | { valid: false; error: string };
+
+/**
+ * Validate HTTP API search input.
+ * @param input - Raw input from HTTP request body
+ * @returns Validation result with typed data when valid
+ */
+export function validateSearchInput(input: unknown): SearchInputValidationResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { valid: false, error: "Request body must be an object" };
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  // Validate tags and tags_all (optional string arrays)
+  for (const field of ["tags", "tags_all"] as const) {
+    if (field in obj) {
+      if (!Array.isArray(obj[field])) {
+        return { valid: false, error: `Field '${field}' must be an array` };
+      }
+      for (const tag of obj[field] as unknown[]) {
+        if (typeof tag !== "string") {
+          return { valid: false, error: `Each element in '${field}' must be a string` };
+        }
+      }
+      // Normalize tags to lowercase
+      obj[field] = normalizeTags(obj[field] as string[]);
+    }
+  }
+
+  // Validate optional string fields
+  for (const field of ["query", "from_project", "from_ai", "created_after", "created_before"]) {
+    if (field in obj && typeof obj[field] !== "string") {
+      return { valid: false, error: `Field '${field}' must be a string` };
+    }
+  }
+
+  // Validate status if present
+  if ("status" in obj) {
+    if (typeof obj.status !== "string") {
+      return { valid: false, error: "Field 'status' must be a string" };
+    }
+    const statusResult = validateStatus(obj.status);
+    if (!statusResult.valid) {
+      return { valid: false, error: statusResult.error ?? "Invalid status" };
+    }
+  }
+
+  // Validate limit if present
+  if ("limit" in obj) {
+    if (typeof obj.limit !== "number" || !Number.isInteger(obj.limit) || obj.limit < 1) {
+      return { valid: false, error: "Field 'limit' must be a positive integer" };
+    }
+    if (obj.limit > 100) {
+      return { valid: false, error: "Field 'limit' must not exceed 100" };
+    }
+  }
+
+  return { valid: true, data: obj as unknown as SearchInput };
 }
 
 // =============================================================================

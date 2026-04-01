@@ -11,6 +11,7 @@ import type {
   MergeInput,
   MergeResult,
   SaveInput,
+  SearchInput,
   Storage,
   StorageResult,
   StorageStats,
@@ -221,6 +222,11 @@ export class RemoteStorage implements Storage {
   /** @inheritdoc */
   async stats(): Promise<StorageResult<StorageStats>> {
     return this.request("GET", "/stats");
+  }
+
+  /** @inheritdoc */
+  async search(input: SearchInput): Promise<StorageResult<HandoffSummary[]>> {
+    return this.request("POST", "/handoff/search", input);
   }
 
   /** @inheritdoc */

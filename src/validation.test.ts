@@ -3,6 +3,7 @@ import {
   type Config,
   VALID_STATUSES,
   formatBytes,
+  normalizeTags,
   splitConversationMessages,
   validateAddCommentInput,
   validateConversation,
@@ -11,8 +12,10 @@ import {
   validateMergeInput,
   validateNextAction,
   validateSaveInput,
+  validateSearchInput,
   validateStatus,
   validateSummary,
+  validateTags,
   validateTitle,
 } from "./validation.js";
 
@@ -27,6 +30,8 @@ const testConfig: Config = {
   maxCommentsPerHandoff: 50,
   maxCommentAuthorLength: 100,
   maxNextActionBytes: 2048,
+  maxTagsPerHandoff: 20,
+  maxTagLength: 50,
 };
 
 describe("validateKey", () => {
@@ -417,6 +422,32 @@ describe("validateSaveInput", () => {
     expect(result.valid).toBe(false);
     expect(result.error).toContain("must be a string");
   });
+
+  it("should accept valid tags", () => {
+    const result = validateSaveInput({ ...validInput, tags: ["auth", "project:foo"] });
+    expect(result.valid).toBe(true);
+  });
+
+  it("should reject non-array tags", () => {
+    const result = validateSaveInput({ ...validInput, tags: "auth" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be an array");
+  });
+
+  it("should reject tags with non-string elements", () => {
+    const result = validateSaveInput({ ...validInput, tags: ["auth", 123] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should normalize tags to lowercase in validateSaveInput", () => {
+    const input = { ...validInput, tags: ["Auth", "PROJECT:FOO"] };
+    const result = validateSaveInput(input);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.tags).toEqual(["auth", "project:foo"]);
+    }
+  });
 });
 
 describe("validateMergeInput", () => {
@@ -577,5 +608,166 @@ describe("validateAddCommentInput", () => {
     if (!result.valid) {
       expect(result.error).toContain("exceeds maximum length");
     }
+  });
+});
+
+describe("validateTags", () => {
+  it("should accept valid tags", () => {
+    expect(validateTags(["auth", "project:foo", "issue-176"], testConfig).valid).toBe(true);
+  });
+
+  it("should accept tags with colons, hyphens, underscores", () => {
+    expect(validateTags(["my_tag", "ns:value", "a-b-c"], testConfig).valid).toBe(true);
+  });
+
+  it("should reject empty tag string", () => {
+    const result = validateTags(["valid", ""], testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("cannot be empty");
+  });
+
+  it("should reject tag with invalid characters", () => {
+    const result = validateTags(["has spaces"], testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("invalid characters");
+  });
+
+  it("should reject uppercase tags (must be pre-normalized)", () => {
+    const result = validateTags(["UpperCase"], testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("invalid characters");
+  });
+
+  it("should reject tag exceeding max length", () => {
+    const longTag = "a".repeat(51);
+    const result = validateTags([longTag], testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("exceeds maximum length");
+  });
+
+  it("should reject too many tags", () => {
+    const tags = Array.from({ length: 21 }, (_, i) => `tag-${i}`);
+    const result = validateTags(tags, testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Too many tags");
+  });
+
+  it("should accept at exact limit", () => {
+    const tags = Array.from({ length: 20 }, (_, i) => `tag-${i}`);
+    expect(validateTags(tags, testConfig).valid).toBe(true);
+  });
+});
+
+describe("normalizeTags", () => {
+  it("should lowercase all tags", () => {
+    expect(normalizeTags(["Auth", "PROJECT:FOO", "deploy"])).toEqual([
+      "auth",
+      "project:foo",
+      "deploy",
+    ]);
+  });
+
+  it("should return empty array for empty input", () => {
+    expect(normalizeTags([])).toEqual([]);
+  });
+});
+
+describe("validateSearchInput", () => {
+  it("should accept empty object", () => {
+    const result = validateSearchInput({});
+    expect(result.valid).toBe(true);
+  });
+
+  it("should accept valid search with all fields", () => {
+    const result = validateSearchInput({
+      tags: ["auth"],
+      tags_all: ["project:foo", "deploy"],
+      query: "refactor",
+      from_project: "my-project",
+      from_ai: "claude",
+      status: "active",
+      created_after: "2026-01-01T00:00:00Z",
+      created_before: "2026-12-31T23:59:59Z",
+      limit: 50,
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("should normalize tags to lowercase", () => {
+    const result = validateSearchInput({ tags: ["Auth", "DEPLOY"] });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.tags).toEqual(["auth", "deploy"]);
+    }
+  });
+
+  it("should normalize tags_all to lowercase", () => {
+    const result = validateSearchInput({ tags_all: ["Auth"] });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.tags_all).toEqual(["auth"]);
+    }
+  });
+
+  it("should reject non-object input", () => {
+    expect(validateSearchInput(null).valid).toBe(false);
+    expect(validateSearchInput([]).valid).toBe(false);
+    expect(validateSearchInput("string").valid).toBe(false);
+  });
+
+  it("should reject non-array tags", () => {
+    const result = validateSearchInput({ tags: "auth" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be an array");
+  });
+
+  it("should reject non-string elements in tags", () => {
+    const result = validateSearchInput({ tags: [123] });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should reject non-string query", () => {
+    const result = validateSearchInput({ query: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should reject invalid status", () => {
+    const result = validateSearchInput({ status: "unknown" });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Invalid status");
+  });
+
+  it("should reject non-string status", () => {
+    const result = validateSearchInput({ status: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should reject non-integer limit", () => {
+    const result = validateSearchInput({ limit: 1.5 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("positive integer");
+  });
+
+  it("should reject limit less than 1", () => {
+    const result = validateSearchInput({ limit: 0 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("positive integer");
+  });
+
+  it("should reject limit greater than 100", () => {
+    const result = validateSearchInput({ limit: 101 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must not exceed 100");
+  });
+});
+
+describe("validateKey - reserved keys", () => {
+  it("should reject reserved key 'search'", () => {
+    const result = validateKey("search");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("reserved");
   });
 });

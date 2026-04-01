@@ -143,6 +143,12 @@ Omit sections that don't apply. Add custom sections if needed.`,
         .string()
         .optional()
         .describe("Suggested next action for the receiver (e.g., 'Run tests and deploy')"),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Tags for categorizing this handoff (e.g., ['project:foo', 'issue:176', 'auth']). Lowercase alphanumeric, hyphens, underscores, colons."
+        ),
     },
     async (
       {
@@ -157,6 +163,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
         conversation_bytes,
         status,
         next_action,
+        tags,
       },
       extra
     ) => {
@@ -185,6 +192,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
         conversation_bytes,
         status,
         next_action,
+        tags,
       });
 
       if (result.success) {
@@ -269,6 +277,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
               conversation_bytes: z.number().optional(),
               status: z.enum(["active", "completed", "pending"]).optional(),
               next_action: z.string().optional(),
+              tags: z.array(z.string()).optional(),
             })
           )
           .describe("List of handoffs"),
@@ -733,6 +742,71 @@ ${handoff.conversation}${commentsText}`,
             text: `\u2705 Comment deleted from "${key}"`,
           },
         ],
+      };
+    }
+  );
+
+  // handoff_search
+  server.tool(
+    "handoff_search",
+    "Search handoffs by tags, text query, project, AI, status, or date range. Returns matching handoff summaries without full conversation content. Use this to discover relevant handoffs in multi-agent workflows.",
+    {
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Find handoffs with ANY of these tags (e.g., ['project:foo', 'auth'])"),
+      tags_all: z.array(z.string()).optional().describe("Find handoffs with ALL of these tags"),
+      query: z.string().optional().describe("Text search in title and summary (case-insensitive)"),
+      from_project: z.string().optional().describe("Filter by exact project name"),
+      from_ai: z.string().optional().describe("Filter by exact AI name"),
+      status: z.enum(["active", "completed", "pending"]).optional().describe("Filter by status"),
+      created_after: z
+        .string()
+        .optional()
+        .describe("ISO date: only handoffs created after this time"),
+      created_before: z
+        .string()
+        .optional()
+        .describe("ISO date: only handoffs created before this time"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Max results to return (default: 20)"),
+    },
+    async (params) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
+      const { storage } = await getStorage();
+      const result = await storage.search(params);
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_search",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+      });
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: `\u274C Error: ${result.error}` }],
+        };
+      }
+
+      const handoffs = result.data || [];
+
+      if (handoffs.length === 0) {
+        return {
+          content: [{ type: "text", text: "No handoffs matched your search criteria." }],
+        };
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(handoffs, null, 2) }],
       };
     }
   );

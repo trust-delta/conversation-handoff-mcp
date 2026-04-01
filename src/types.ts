@@ -33,6 +33,8 @@ export interface Handoff {
   status?: HandoffStatus;
   /** Suggested next action for the receiver */
   next_action?: string;
+  /** Tags for categorizing and searching handoffs */
+  tags?: string[];
 }
 
 export interface HandoffSummary {
@@ -51,6 +53,8 @@ export interface HandoffSummary {
   status?: HandoffStatus;
   /** Suggested next action for the receiver */
   next_action?: string;
+  /** Tags for categorizing and searching handoffs */
+  tags?: string[];
 }
 
 export interface SaveInput {
@@ -68,6 +72,30 @@ export interface SaveInput {
   status?: HandoffStatus;
   /** Suggested next action for the receiver */
   next_action?: string;
+  /** Tags for categorizing and searching handoffs */
+  tags?: string[];
+}
+
+/** Search criteria for finding handoffs */
+export interface SearchInput {
+  /** Find handoffs with ANY of these tags */
+  tags?: string[];
+  /** Find handoffs with ALL of these tags */
+  tags_all?: string[];
+  /** Text search in title and summary (case-insensitive substring) */
+  query?: string;
+  /** Filter by exact project name */
+  from_project?: string;
+  /** Filter by exact AI name */
+  from_ai?: string;
+  /** Filter by status */
+  status?: HandoffStatus;
+  /** Only handoffs created after this ISO date */
+  created_after?: string;
+  /** Only handoffs created before this ISO date */
+  created_before?: string;
+  /** Max results to return (default: 20, max: 100) */
+  limit?: number;
 }
 
 export interface StorageStats {
@@ -128,6 +156,7 @@ export interface Storage {
   clear(key?: string): Promise<StorageResult<{ message: string; count?: number }>>;
   stats(): Promise<StorageResult<StorageStats>>;
   merge(input: MergeInput): Promise<StorageResult<MergeResult>>;
+  search(input: SearchInput): Promise<StorageResult<HandoffSummary[]>>;
   addComment(key: string, author: string, content: string): Promise<StorageResult<Comment>>;
   deleteComment(key: string, commentId: string): Promise<StorageResult<{ message: string }>>;
 }
