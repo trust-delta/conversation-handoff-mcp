@@ -464,7 +464,7 @@ export function validateSearchInput(input: unknown): SearchInputValidationResult
 
   const obj = input as Record<string, unknown>;
 
-  // Validate tags and tags_all (optional string arrays)
+  // Validate tags and tags_all (optional string arrays, same rules as save)
   for (const field of ["tags", "tags_all"] as const) {
     if (field in obj) {
       if (!Array.isArray(obj[field])) {
@@ -475,15 +475,33 @@ export function validateSearchInput(input: unknown): SearchInputValidationResult
           return { valid: false, error: `Each element in '${field}' must be a string` };
         }
       }
-      // Normalize tags to lowercase
-      obj[field] = normalizeTags(obj[field] as string[]);
+      // Normalize and validate tags (same constraints as save)
+      const normalized = normalizeTags(obj[field] as string[]);
+      const tagsResult = validateTags(normalized);
+      if (!tagsResult.valid) {
+        return { valid: false, error: tagsResult.error ?? "Invalid tags" };
+      }
+      obj[field] = normalized;
     }
   }
 
   // Validate optional string fields
-  for (const field of ["query", "from_project", "from_ai", "created_after", "created_before"]) {
+  for (const field of ["query", "from_project", "from_ai"]) {
     if (field in obj && typeof obj[field] !== "string") {
       return { valid: false, error: `Field '${field}' must be a string` };
+    }
+  }
+
+  // Validate ISO date fields (must be parseable as Date and produce valid ISO strings)
+  for (const field of ["created_after", "created_before"]) {
+    if (field in obj) {
+      if (typeof obj[field] !== "string") {
+        return { valid: false, error: `Field '${field}' must be a string` };
+      }
+      const date = new Date(obj[field] as string);
+      if (Number.isNaN(date.getTime())) {
+        return { valid: false, error: `Field '${field}' must be a valid ISO date string` };
+      }
     }
   }
 
