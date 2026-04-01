@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-04-02
+
+### Added
+
+- **Tags Metadata**: New optional `tags: string[]` field on `handoff_save`, `handoff_list`, and `handoff_load` for categorizing handoffs with structured labels (e.g., `project:foo`, `issue:176`, `auth`)
+  - Tags auto-normalize to lowercase; pattern: `/^[a-z0-9_:-]+$/`
+  - Config: `HANDOFF_MAX_TAGS` (default 20), `HANDOFF_MAX_TAG_LENGTH` (default 50)
+- **`handoff_search` Tool**: New MCP tool and `POST /handoff/search` HTTP endpoint for multi-criteria handoff discovery
+  - Filters (AND-combined): `tags` (ANY), `tags_all` (ALL), `query` (text search in title/summary), `from_project`, `from_ai`, `status`, `created_after`, `created_before`, `limit`
+  - Returns `HandoffSummary[]` — no conversation content
+- **Reserved key**: `"search"` is now a reserved key (alongside `"merge"`) to prevent route conflicts
+- 65 new tests (total: 340)
+
+### Fixed
+
+- **FIFO deletion safety**: Moved FIFO auto-deletion after all validation in `save()` — previously, invalid metadata (tags, status, etc.) at capacity would delete the oldest handoff before failing validation
+- **npm audit**: Updated transitive dependencies (hono, @hono/node-server, express-rate-limit) to resolve high-severity vulnerabilities
+
+### Changed
+
+- `handoff_merge` now unions tags from source handoffs (deduplicated)
+- `handoff_list` output includes `tags` field when present
+
 ## [0.11.2] - 2026-03-21
 
 ### Fixed
