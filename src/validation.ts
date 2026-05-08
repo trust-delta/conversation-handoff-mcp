@@ -444,6 +444,47 @@ export function validateMergeInput(input: unknown): MergeInputValidationResult {
 }
 
 // =============================================================================
+// Append Input Validation
+// =============================================================================
+
+/** Validation result for append input with type-safe narrowing */
+export type AppendInputValidationResult =
+  | { valid: true; data: { chunk: string } }
+  | { valid: false; error: string };
+
+/**
+ * Validate HTTP API append input (body only — key comes from URL path).
+ * Per-chunk size cap: maxConversationBytes (final cumulative size is enforced in storage layer).
+ */
+export function validateAppendInput(input: unknown): AppendInputValidationResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { valid: false, error: "Request body must be an object" };
+  }
+
+  const obj = input as Record<string, unknown>;
+
+  if (!("chunk" in obj)) {
+    return { valid: false, error: "Missing required field: chunk" };
+  }
+  if (typeof obj.chunk !== "string") {
+    return { valid: false, error: "Field 'chunk' must be a string" };
+  }
+  if (obj.chunk.trim().length === 0) {
+    return { valid: false, error: "Field 'chunk' cannot be empty" };
+  }
+
+  const chunkBytes = Buffer.byteLength(obj.chunk, "utf8");
+  if (chunkBytes > defaultConfig.maxConversationBytes) {
+    return {
+      valid: false,
+      error: `Chunk exceeds maximum size (${defaultConfig.maxConversationBytes} bytes)`,
+    };
+  }
+
+  return { valid: true, data: { chunk: obj.chunk } };
+}
+
+// =============================================================================
 // Search Input Validation
 // =============================================================================
 

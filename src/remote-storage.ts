@@ -5,6 +5,8 @@
 import { getAuditLogger } from "./audit.js";
 import { connectionConfig } from "./config.js";
 import type {
+  AppendConversationInput,
+  AppendConversationResult,
   Comment,
   Handoff,
   HandoffSummary,
@@ -248,5 +250,14 @@ export class RemoteStorage implements Storage {
       "DELETE",
       `/handoff/${encodeURIComponent(key)}/comments/${encodeURIComponent(commentId)}`
     );
+  }
+
+  /** @inheritdoc */
+  async appendConversation(
+    input: AppendConversationInput
+  ): Promise<StorageResult<AppendConversationResult>> {
+    return this.request("POST", `/handoff/${encodeURIComponent(input.key)}/append`, {
+      chunk: input.chunk,
+    });
   }
 }

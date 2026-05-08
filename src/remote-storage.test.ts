@@ -317,6 +317,55 @@ describe("RemoteStorage - advanced", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+
+    it("should send POST for appendConversation with chunk in body", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: "appended",
+            key: "test-key",
+            conversation_bytes: 100,
+            message_count: 2,
+          }),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const result = await storage.appendConversation({
+        key: "test-key",
+        chunk: "extra content",
+      });
+
+      expect(result.success).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:1099/handoff/test-key/append",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ chunk: "extra content" }),
+        })
+      );
+    });
+
+    it("should encode special characters in key for appendConversation", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: "appended",
+            key: "test key",
+            conversation_bytes: 50,
+            message_count: 1,
+          }),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      await storage.appendConversation({ key: "test key", chunk: "x" });
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:1099/handoff/test%20key/append",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
   });
 
   describe("exponential backoff", () => {

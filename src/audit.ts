@@ -51,10 +51,10 @@ export interface ToolEntry extends AuditEntryBase {
   };
 }
 
-/** storage: save/load/list/clear/merge/stats */
+/** storage: save/load/list/clear/merge/stats/append */
 export interface StorageEntry extends AuditEntryBase {
   category: "storage";
-  event: "save" | "load" | "list" | "clear" | "merge" | "stats";
+  event: "save" | "load" | "list" | "clear" | "merge" | "stats" | "append";
   key?: string;
   dataSize?: number;
   fifoDeleted?: boolean;

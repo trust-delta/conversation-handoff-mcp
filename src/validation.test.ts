@@ -6,6 +6,7 @@ import {
   normalizeTags,
   splitConversationMessages,
   validateAddCommentInput,
+  validateAppendInput,
   validateConversation,
   validateHandoff,
   validateKey,
@@ -801,5 +802,43 @@ describe("validateKey - reserved keys", () => {
     const result = validateKey("search");
     expect(result.valid).toBe(false);
     expect(result.error).toContain("reserved");
+  });
+});
+
+describe("validateAppendInput", () => {
+  it("should reject non-object input", () => {
+    const result = validateAppendInput("not an object");
+    expect(result.valid).toBe(false);
+  });
+
+  it("should reject array input", () => {
+    const result = validateAppendInput([]);
+    expect(result.valid).toBe(false);
+  });
+
+  it("should reject when chunk is missing", () => {
+    const result = validateAppendInput({});
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("chunk");
+  });
+
+  it("should reject non-string chunk", () => {
+    const result = validateAppendInput({ chunk: 123 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("must be a string");
+  });
+
+  it("should reject empty chunk", () => {
+    const result = validateAppendInput({ chunk: "   " });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("empty");
+  });
+
+  it("should accept valid chunk", () => {
+    const result = validateAppendInput({ chunk: "hello world" });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.chunk).toBe("hello world");
+    }
   });
 });

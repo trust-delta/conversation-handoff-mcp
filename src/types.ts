@@ -133,6 +133,22 @@ export interface MergeResult {
   deleted_sources: boolean;
 }
 
+/** Input for appending a conversation chunk to an existing handoff */
+export interface AppendConversationInput {
+  key: string;
+  chunk: string;
+}
+
+/** Result of an append operation */
+export interface AppendConversationResult {
+  message: string;
+  key: string;
+  /** Total conversation byte size after this append */
+  conversation_bytes: number;
+  /** Total message count after this append */
+  message_count: number;
+}
+
 export interface StorageResult<T> {
   success: boolean;
   data?: T;
@@ -159,6 +175,9 @@ export interface Storage {
   search(input: SearchInput): Promise<StorageResult<HandoffSummary[]>>;
   addComment(key: string, author: string, content: string): Promise<StorageResult<Comment>>;
   deleteComment(key: string, commentId: string): Promise<StorageResult<{ message: string }>>;
+  appendConversation(
+    input: AppendConversationInput
+  ): Promise<StorageResult<AppendConversationResult>>;
 }
 
 export type StorageMode = "shared" | "standalone" | "standalone-explicit";

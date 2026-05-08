@@ -10,6 +10,7 @@ import {
   connectionConfig,
   defaultConfig,
   validateAddCommentInput,
+  validateAppendInput,
   validateMergeInput,
   validateSaveInput,
   validateSearchInput,
@@ -207,6 +208,16 @@ export class HttpServer {
       };
     }
 
+    // Match /handoff/:key/append pattern
+    const appendMatch = pathname.match(/^\/handoff\/([^/]+)\/append$/);
+    if (appendMatch?.[1]) {
+      return {
+        path: "/handoff/:key/append",
+        key: safeDecodeURIComponent(appendMatch[1]),
+        query: urlObj.searchParams,
+      };
+    }
+
     // Match /handoff/search (before generic /handoff/:key to avoid treating "search" as a key)
     if (pathname === "/handoff/search") {
       return { path: "/handoff/search", query: urlObj.searchParams };
@@ -357,6 +368,31 @@ export class HttpServer {
           validation.data.author,
           validation.data.content
         );
+        if (result.success) {
+          this.sendJson(res, 200, result.data);
+        } else if (result.error?.includes("not found")) {
+          this.sendJson(res, 404, { error: result.error });
+        } else {
+          this.sendJson(res, 400, { error: result.error });
+        }
+        return;
+      }
+
+      // POST /handoff/:key/append - Append conversation chunk
+      if (method === "POST" && path === "/handoff/:key/append" && key) {
+        const rawInput = await this.parseJsonBody(req, res);
+        if (rawInput === null) return;
+
+        const validation = validateAppendInput(rawInput);
+        if (!validation.valid) {
+          this.sendJson(res, 400, { error: validation.error });
+          return;
+        }
+
+        const result = await this.storage.appendConversation({
+          key,
+          chunk: validation.data.chunk,
+        });
         if (result.success) {
           this.sendJson(res, 200, result.data);
         } else if (result.error?.includes("not found")) {

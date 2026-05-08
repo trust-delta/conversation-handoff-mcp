@@ -297,6 +297,81 @@ describe("HttpServer", () => {
     });
   });
 
+  describe("Append endpoint", () => {
+    beforeAll(async () => {
+      await fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "append-test",
+          title: "Append Test",
+          summary: "Testing append",
+          conversation: "## User\nFirst message",
+          from_ai: "claude",
+          from_project: "test",
+        }),
+      });
+    });
+
+    it("should append a chunk to an existing handoff", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/append-test/append`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunk: "\n\n## Assistant\nReply" }),
+      });
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as {
+        key: string;
+        conversation_bytes: number;
+        message_count: number;
+      };
+      expect(data.key).toBe("append-test");
+      expect(data.conversation_bytes).toBeGreaterThan(0);
+      expect(data.message_count).toBeGreaterThanOrEqual(2);
+
+      // Verify the conversation now contains the appended chunk
+      const loadResp = await fetch(`http://127.0.0.1:${testPort}/handoff/append-test`);
+      const loaded = (await loadResp.json()) as { conversation: string };
+      expect(loaded.conversation).toContain("Reply");
+    });
+
+    it("should return 404 when appending to non-existent handoff", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/no-such-key/append`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunk: "anything" }),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 400 when chunk is missing", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/append-test/append`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("should return 400 when chunk is empty", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/append-test/append`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunk: "   " }),
+      });
+      expect(response.status).toBe(400);
+    });
+
+    it("should return 400 for invalid JSON", async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/append-test/append`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   describe("Binding", () => {
     it("should only be accessible via localhost", async () => {
       // This test verifies the server is bound to 127.0.0.1

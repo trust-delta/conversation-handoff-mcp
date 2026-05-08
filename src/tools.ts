@@ -72,6 +72,9 @@ export function registerTools(server: McpServer): void {
     "handoff_save",
     `Save a conversation handoff for later retrieval. Use this to pass conversation context to another AI or project.
 
+## Long conversations (>~100KB)
+If the conversation is large, **save the first chunk with this tool**, then call \`handoff_append\` repeatedly with the remaining chunks. Doing one giant \`handoff_save\` can fail with an XML parse / tool-input error because Claude Code encodes tool arguments as XML internally and very large strings can break that encoding.
+
 ## Format Selection
 - **structured** (default): Organize content using the template below. Much faster — reduces output tokens to ~5-20% of the original conversation. Best for most handoffs.
 - **verbatim**: Save the complete word-for-word conversation. Use only when exact wording matters (e.g., legal text, precise error messages).
@@ -740,6 +743,64 @@ ${handoff.conversation}${commentsText}`,
           {
             type: "text",
             text: `\u2705 Comment deleted from "${key}"`,
+          },
+        ],
+      };
+    }
+  );
+
+  // handoff_append
+  server.tool(
+    "handoff_append",
+    `Append a conversation chunk to an existing handoff. Use this to upload long conversations in multiple pieces.
+
+## When to use
+- The full conversation is over ~100KB.
+- handoff_save fails with an XML parse / tool-input error on a long conversation.
+
+Claude Code encodes tool-call arguments as XML internally; very large \`conversation\` strings can break that encoding (e.g., when the payload contains tag-like substrings). Splitting the upload into smaller chunks avoids that failure mode.
+
+## How to use
+1. Call \`handoff_save\` first with the initial portion (and all metadata: title, summary, etc.) to create the handoff.
+2. Call \`handoff_append\` repeatedly with subsequent chunks until the full conversation is uploaded.
+3. Chunks are concatenated as-is — include any newlines or separators inside each chunk.
+
+The cumulative conversation size must stay within the storage limit (default 1 MiB).`,
+    {
+      key: z.string().describe("Key of the handoff to append to (created via handoff_save)"),
+      chunk: z
+        .string()
+        .describe(
+          "Conversation text to append. Concatenated to the existing conversation as-is — include leading newlines if needed."
+        ),
+    },
+    async ({ key, chunk }) => {
+      const audit = getAuditLogger();
+      const timer = audit.startTimer();
+
+      const { storage } = await getStorage();
+      const result = await storage.appendConversation({ key, chunk });
+
+      audit.logTool({
+        event: "tool_call",
+        toolName: "handoff_append",
+        durationMs: timer.elapsed(),
+        success: result.success,
+        error: result.error,
+        inputSizes: { conversationBytes: Buffer.byteLength(chunk, "utf-8") },
+      });
+
+      if (!result.success) {
+        return {
+          content: [{ type: "text", text: `❌ Error: ${result.error}` }],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✅ ${result.data?.message}`,
           },
         ],
       };

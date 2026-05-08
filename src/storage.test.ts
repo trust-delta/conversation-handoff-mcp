@@ -1132,6 +1132,101 @@ describe("LocalStorage", () => {
       expect(result.data?.length).toBe(1);
     });
   });
+
+  describe("appendConversation", () => {
+    it("should append a chunk to an existing handoff", async () => {
+      await storage.save(validInput);
+
+      const result = await storage.appendConversation({
+        key: validInput.key,
+        chunk: "\n\n## User\nFollow-up question",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.key).toBe(validInput.key);
+      expect(result.data?.conversation_bytes).toBe(
+        Buffer.byteLength(validInput.conversation, "utf8") +
+          Buffer.byteLength("\n\n## User\nFollow-up question", "utf8")
+      );
+
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.conversation).toBe(
+        `${validInput.conversation}\n\n## User\nFollow-up question`
+      );
+    });
+
+    it("should support multiple sequential appends", async () => {
+      await storage.save(validInput);
+
+      await storage.appendConversation({ key: validInput.key, chunk: "AAA" });
+      await storage.appendConversation({ key: validInput.key, chunk: "BBB" });
+      const result = await storage.appendConversation({ key: validInput.key, chunk: "CCC" });
+
+      expect(result.success).toBe(true);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.conversation).toBe(`${validInput.conversation}AAABBBCCC`);
+    });
+
+    it("should return error when handoff does not exist", async () => {
+      const result = await storage.appendConversation({
+        key: "missing",
+        chunk: "anything",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not found");
+    });
+
+    it("should reject empty chunk", async () => {
+      await storage.save(validInput);
+
+      const result = await storage.appendConversation({ key: validInput.key, chunk: "   " });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("empty");
+    });
+
+    it("should reject when cumulative size would exceed maxConversationBytes", async () => {
+      // testConfig.maxConversationBytes = 10000
+      const big = "x".repeat(8000);
+      await storage.save({ ...validInput, conversation: big });
+
+      const result = await storage.appendConversation({
+        key: validInput.key,
+        chunk: "y".repeat(3000), // 8000 + 3000 = 11000 > 10000
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("exceed maximum size");
+    });
+
+    it("should reject single chunk larger than maxConversationBytes", async () => {
+      await storage.save(validInput);
+
+      const result = await storage.appendConversation({
+        key: validInput.key,
+        chunk: "z".repeat(testConfig.maxConversationBytes + 1),
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Chunk exceeds maximum size");
+    });
+
+    it("should update message_count and conversation_bytes", async () => {
+      await storage.save(validInput);
+      const beforeStats = await storage.stats();
+      const beforeBytes = beforeStats.data?.current.totalBytes ?? 0;
+
+      const result = await storage.appendConversation({
+        key: validInput.key,
+        chunk: "\n\n## Assistant\nAnother reply",
+      });
+
+      expect(result.data?.message_count).toBe(3);
+
+      const afterStats = await storage.stats();
+      expect((afterStats.data?.current.totalBytes ?? 0) > beforeBytes).toBe(true);
+    });
+  });
 });
 
 describe("RemoteStorage", () => {

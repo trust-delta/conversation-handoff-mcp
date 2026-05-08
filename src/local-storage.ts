@@ -7,6 +7,8 @@ import { generateKey, generateTitle } from "./autoconnect.js";
 import type { Config } from "./config.js";
 import { defaultConfig } from "./config.js";
 import type {
+  AppendConversationInput,
+  AppendConversationResult,
   Comment,
   Handoff,
   HandoffSummary,
@@ -682,5 +684,79 @@ export class LocalStorage implements Storage {
 
     existing.splice(index, 1);
     return { success: true, data: { message: `Comment deleted: "${commentId}"` } };
+  }
+
+  /**
+   * Append a conversation chunk to an existing handoff.
+   *
+   * Why: Claude Code's tool-use input is XML-encoded internally; large `conversation`
+   * arguments (hundreds of KB) can break the XML parser when the payload contains
+   * tag-like substrings or hits stream-tokenization edge cases. Splitting the upload
+   * into smaller append calls sidesteps that failure mode entirely.
+   *
+   * The chunk is concatenated as-is (no separator). Callers should embed any needed
+   * delimiter inside the chunk itself.
+   */
+  async appendConversation(
+    input: AppendConversationInput
+  ): Promise<StorageResult<AppendConversationResult>> {
+    const handoff = this.handoffs.get(input.key);
+    if (!handoff) {
+      return { success: false, error: `Handoff not found: "${input.key}"` };
+    }
+
+    if (!input.chunk || input.chunk.trim().length === 0) {
+      return { success: false, error: "Chunk cannot be empty" };
+    }
+
+    const chunkBytes = Buffer.byteLength(input.chunk, "utf8");
+    if (chunkBytes > this.config.maxConversationBytes) {
+      return {
+        success: false,
+        error: `Chunk exceeds maximum size (${this.config.maxConversationBytes} bytes)`,
+      };
+    }
+
+    const existingBytes =
+      handoff.conversation_bytes ?? Buffer.byteLength(handoff.conversation, "utf8");
+    const newConversationBytes = existingBytes + chunkBytes;
+    if (newConversationBytes > this.config.maxConversationBytes) {
+      return {
+        success: false,
+        error: `Total conversation would exceed maximum size (${this.config.maxConversationBytes} bytes). Current: ${existingBytes}, chunk: ${chunkBytes}`,
+      };
+    }
+
+    this.cachedTotalBytes -= this.handoffBytes(handoff);
+
+    const newConversation = handoff.conversation + input.chunk;
+    const newMessageCount = splitConversationMessages(newConversation).length;
+
+    const updated: Handoff = {
+      ...handoff,
+      conversation: newConversation,
+      message_count: newMessageCount,
+      conversation_bytes: newConversationBytes,
+    };
+
+    this.handoffs.set(input.key, updated);
+    this.cachedTotalBytes += this.handoffBytes(updated);
+
+    getAuditLogger().logStorage({
+      event: "append",
+      key: input.key,
+      dataSize: chunkBytes,
+      success: true,
+    });
+
+    return {
+      success: true,
+      data: {
+        message: `Chunk appended to "${input.key}" (${formatBytes(newConversationBytes)} total)`,
+        key: input.key,
+        conversation_bytes: newConversationBytes,
+        message_count: newMessageCount,
+      },
+    };
   }
 }
