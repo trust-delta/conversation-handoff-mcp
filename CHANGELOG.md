@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-05-09
+
+### Added
+
+- **`handoff_append` Tool**: New MCP tool and `POST /handoff/:key/append` HTTP endpoint for appending conversation chunks to an existing handoff
+  - Workaround for XML parse errors that occur when Claude Code tries to encode very large `conversation` arguments as XML internally
+  - Recommended workflow for conversations >~100KB: `handoff_save` (initial chunk + metadata) → `handoff_append` (subsequent chunks)
+  - Cumulative size still bounded by `HANDOFF_MAX_CONVERSATION_BYTES` (default 1 MiB)
+- **`Storage.appendConversation`**: New interface method implemented by both `LocalStorage` and `RemoteStorage`
+- **`validateAppendInput`**: HTTP body validation for the append endpoint
+- **Audit `append` event**: New `StorageEntry` event type for tracking append operations
+- 20 new tests (total: 360)
+
+### Changed
+
+- `handoff_save` tool description now documents the split-save workflow for long conversations
+
 ## [0.12.0] - 2026-04-02
 
 ### Added
