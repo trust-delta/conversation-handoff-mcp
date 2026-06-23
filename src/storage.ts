@@ -2,25 +2,24 @@
 // Dynamic storage provider and re-exports
 // =============================================================================
 
+export { LocalStorage } from "./local-storage.js";
+export type { ReconnectFn } from "./remote-storage.js";
+export { RemoteStorage } from "./remote-storage.js";
 // Re-export all types for backward compatibility
 export type {
   Comment,
+  GetStorageResult,
   Handoff,
   HandoffSummary,
-  SaveInput,
-  SearchInput,
-  StorageStats,
   MergeInput,
   MergeResult,
-  StorageResult,
+  SaveInput,
+  SearchInput,
   Storage,
   StorageMode,
-  GetStorageResult,
+  StorageResult,
+  StorageStats,
 } from "./types.js";
-
-export { LocalStorage } from "./local-storage.js";
-export { RemoteStorage } from "./remote-storage.js";
-export type { ReconnectFn } from "./remote-storage.js";
 
 import { type AutoConnectResult, autoConnect } from "./autoconnect.js";
 import { LocalStorage } from "./local-storage.js";

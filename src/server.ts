@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import type { Server } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAuditLogger } from "./audit.js";

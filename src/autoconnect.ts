@@ -4,7 +4,7 @@ import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAuditLogger } from "./audit.js";
-import { type PortRange, compactTimestamp, connectionConfig, sleep } from "./validation.js";
+import { compactTimestamp, connectionConfig, type PortRange, sleep } from "./validation.js";
 
 // =============================================================================
 // Types

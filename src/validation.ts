@@ -3,8 +3,8 @@
 // =============================================================================
 
 // Re-export config types and values for backward compatibility
-export type { Config, PortRange, ConnectionConfig } from "./config.js";
-export { parseEnvInt, parsePortRange, defaultConfig, connectionConfig } from "./config.js";
+export type { Config, ConnectionConfig, PortRange } from "./config.js";
+export { connectionConfig, defaultConfig, parseEnvInt, parsePortRange } from "./config.js";
 
 import type { Config } from "./config.js";
 import { defaultConfig } from "./config.js";

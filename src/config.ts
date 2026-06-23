@@ -63,7 +63,7 @@ export function parsePortRange(envVar: string | undefined, defaultRange: PortRan
     return defaultRange;
   }
   const match = envVar.match(/^(\d+)-(\d+)$/);
-  if (!match || !match[1] || !match[2]) {
+  if (!match?.[1] || !match[2]) {
     console.warn(
       `[conversation-handoff] Invalid port range "${envVar}", using default: ${defaultRange.start}-${defaultRange.end}`
     );
