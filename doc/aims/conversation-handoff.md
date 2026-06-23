@@ -23,5 +23,5 @@ state: open
 - [done] 注釈: comments/annotations（handoff_add_comment 等）、サーバー再起動（handoff_restart）
 - [done] 大規模会話の分割: handoff_append（v0.13.0）
 - [done] 出荷後の currency 自動化: dependabot（npm + github-actions・週次・minor/patch グループ化）導入。非破壊 currency 一巡で脆弱性 11→0（PR #26）
-- [todo] major 追従（biome 2 / typescript 6 / vite 8 / lint-staged 17）を個別 PR で順次 — 各々破壊的変更の検証込み
-- [todo] dependabot PR のレビュー / マージ運用（継続的な保守 posture）
+- [done] major 追従: lint-staged 17 (#33) / biome 2 (#35, config v2 移行) / typescript 6 (#36, `types:["node"]`) / vite 8 (#37) を個別 PR で完了。@types/node は engines 床(>=20)に合わせ 20 据え置き
+- [todo] dependabot PR のレビュー / マージ運用（継続的な保守 posture）— @types/node 26 提案は据え置き判断
