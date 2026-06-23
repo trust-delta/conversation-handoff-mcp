@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getStorage,
   LocalStorage,
   type MergeInput,
   RemoteStorage,
-  type SaveInput,
-  getStorage,
   resetStorageState,
+  type SaveInput,
 } from "./storage.js";
 import type { Config } from "./validation.js";
 
@@ -1464,7 +1464,6 @@ describe("getStorage", () => {
   });
 
   it("should return standalone mode when auto-connect fails (v0.4.0+ silent fallback)", async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 
     // Mock fetch to simulate no server available anywhere
@@ -1489,7 +1488,6 @@ describe("getStorage", () => {
   });
 
   it("should cache auto-connect result per process", { timeout: 15000 }, async () => {
-    // biome-ignore lint/performance/noDelete: need to clear env var for test
     delete process.env.HANDOFF_SERVER;
 
     // Mock fetch to fail initially

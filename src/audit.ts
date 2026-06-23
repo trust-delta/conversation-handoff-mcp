@@ -166,7 +166,6 @@ class WriteQueue {
   private queue: string[] = [];
   private flushing = false;
   private filePath: string;
-  private droppedCount = 0;
 
   /**
    * @param filePath - Path to the JSONL log file
@@ -185,7 +184,6 @@ class WriteQueue {
     if (this.queue.length >= MAX_QUEUE_SIZE) {
       const dropCount = Math.floor(MAX_QUEUE_SIZE * 0.1); // Drop 10% to avoid frequent trimming
       this.queue.splice(0, dropCount);
-      this.droppedCount += dropCount;
     }
     this.queue.push(line);
     if (!this.flushing) {
