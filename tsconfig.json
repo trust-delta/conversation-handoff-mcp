@@ -14,7 +14,10 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    // TS 6.0 no longer auto-includes @types/node globals (process/Buffer/NodeJS)
+    // with @types/node 20 (its typesVersions only maps <=5.6); list it explicitly.
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
