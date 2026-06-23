@@ -32,3 +32,6 @@ coverage/
 # Claude Code
 .claude/
 CLAUDE.md
+
+# tmai session/task metadata (not part of this repo)
+.task-meta/
