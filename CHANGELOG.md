@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-06-24
+
+Maintenance release — no functional or API changes to the published package.
+
+### Changed
+
+- **Dependency currency**: brought all dependencies up to date within their semver ranges and resolved all 11 `npm audit` advisories (now **0 vulnerabilities**); every advisory was in the dev toolchain (the published runtime deps were unaffected)
+- **Tooling major upgrades**: `@biomejs/biome` 1.9 → 2.5 (config migrated to the v2 schema), `typescript` 5.9 → 6.0 (added `"types": ["node"]` to keep `@types/node` 20 working under TS 6), `vite` 6 → 8, `lint-staged` 16 → 17
+- **CI actions**: `actions/checkout` v4 → v7, `actions/setup-node` v4 → v6
+- Added Dependabot configuration (npm + github-actions, weekly) for automated dependency updates
+- `@types/node` intentionally held at 20.x to match `engines.node >=20`
+
+### Removed
+
+- Unused `express`, `cors`, `@types/express`, `@types/cors` devDependencies — the HTTP server is built on `node:http`, not Express
+
 ## [0.13.0] - 2026-05-09
 
 ### Added
