@@ -21,6 +21,7 @@ import type {
 import { z } from "zod";
 import { getAuditLogger } from "./audit.js";
 import { generateKey, generateTitle } from "./autoconnect.js";
+import { formatUntrustedHandoff } from "./security.js";
 import { getStorage, retryAutoConnect } from "./storage.js";
 import { sleep } from "./validation.js";
 
@@ -379,42 +380,10 @@ Omit sections that don't apply. Add custom sections if needed.`,
       const handoff = result.data;
       const comments = handoff.comments ?? [];
 
-      // Sender metadata is rendered only when present, so the common case
-      // (handoffs saved without it) keeps the original compact header.
-      const senderMetaParts: string[] = [];
-      if (handoff.spawner_dispatch_id) {
-        senderMetaParts.push(`dispatch: ${handoff.spawner_dispatch_id}`);
-      }
-      if (handoff.sender_agent_id) {
-        senderMetaParts.push(`agent: ${handoff.sender_agent_id}`);
-      }
-      const senderMetaText =
-        senderMetaParts.length > 0 ? `\n**Sender:** ${senderMetaParts.join(", ")}` : "";
-
-      let commentsText = "";
-      if (comments.length > 0) {
-        const commentLines = comments.map(
-          (c) => `- **${c.author}** (${c.created_at}): ${c.content}`
-        );
-        commentsText = `\n\n## Comments (${comments.length})\n${commentLines.join("\n")}`;
-      }
-
       return {
-        content: [
-          {
-            type: "text",
-            text: `# Handoff: ${handoff.title}
-
-**From:** ${handoff.from_ai}${handoff.from_project ? ` (${handoff.from_project})` : ""}
-**Created:** ${handoff.created_at}${senderMetaText}
-
-## Summary
-${handoff.summary}
-
-## Conversation
-${handoff.conversation}${commentsText}`,
-          },
-        ],
+        // Stored content is wrapped in prompt injection markers; structuredContent
+        // below stays raw for programmatic consumers.
+        content: [{ type: "text", text: formatUntrustedHandoff(handoff) }],
         structuredContent: {
           key: handoff.key,
           title: handoff.title,
