@@ -221,6 +221,33 @@ export function validateNextAction(
   return { valid: true };
 }
 
+/** Sender metadata fields carried alongside a handoff (all optional) */
+export const SENDER_METADATA_FIELDS = ["spawner_dispatch_id", "sender_agent_id"] as const;
+
+export type SenderMetadataField = (typeof SENDER_METADATA_FIELDS)[number];
+
+/**
+ * Validate an optional sender metadata identifier.
+ *
+ * Only a length bound is enforced — deliberately no format constraint. These are
+ * opaque identifiers minted by the calling ecosystem (tmai Dispatch IDs, agent IDs,
+ * or whatever an equivalent orchestrator uses), and imposing a shape here would
+ * break the provider-neutral posture this server is built on.
+ */
+export function validateSenderMetadata(
+  value: string,
+  fieldName: string,
+  config: Config = defaultConfig
+): ValidationResult {
+  if (value.length > config.maxSenderMetadataLength) {
+    return {
+      valid: false,
+      error: `${fieldName} exceeds maximum length (${config.maxSenderMetadataLength} characters)`,
+    };
+  }
+  return { valid: true };
+}
+
 // =============================================================================
 // Tag Validation
 // =============================================================================
@@ -341,6 +368,18 @@ export function validateSaveInput(input: unknown): SaveInputValidationResult {
     const nextActionResult = validateNextAction(obj.next_action);
     if (!nextActionResult.valid) {
       return { valid: false, error: nextActionResult.error ?? "Invalid next_action" };
+    }
+  }
+
+  for (const field of SENDER_METADATA_FIELDS) {
+    if (!(field in obj)) continue;
+    const value = obj[field];
+    if (typeof value !== "string") {
+      return { valid: false, error: `Field '${field}' must be a string` };
+    }
+    const senderResult = validateSenderMetadata(value, field);
+    if (!senderResult.valid) {
+      return { valid: false, error: senderResult.error ?? `Invalid ${field}` };
     }
   }
 

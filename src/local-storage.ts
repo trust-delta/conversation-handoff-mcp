@@ -23,11 +23,13 @@ import type {
 import {
   formatBytes,
   normalizeTags,
+  SENDER_METADATA_FIELDS,
   splitConversationMessages,
   validateConversation,
   validateHandoff,
   validateKey,
   validateNextAction,
+  validateSenderMetadata,
   validateStatus,
   validateSummary,
   validateTags,
@@ -139,6 +141,14 @@ export class LocalStorage implements Storage {
         return { success: false, error: nextActionResult.error };
       }
     }
+    for (const field of SENDER_METADATA_FIELDS) {
+      const value = input[field];
+      if (value === undefined) continue;
+      const senderResult = validateSenderMetadata(value, field, this.config);
+      if (!senderResult.valid) {
+        return { success: false, error: senderResult.error };
+      }
+    }
     if (input.tags !== undefined) {
       const normalized = normalizeTags(input.tags);
       const tagsResult = validateTags(normalized, this.config);
@@ -193,6 +203,10 @@ export class LocalStorage implements Storage {
       status,
       ...(input.next_action !== undefined ? { next_action: input.next_action } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(input.spawner_dispatch_id !== undefined
+        ? { spawner_dispatch_id: input.spawner_dispatch_id }
+        : {}),
+      ...(input.sender_agent_id !== undefined ? { sender_agent_id: input.sender_agent_id } : {}),
     };
 
     this.handoffs.set(input.key, handoff);
@@ -337,6 +351,10 @@ export class LocalStorage implements Storage {
       status: h.status,
       ...(h.next_action !== undefined ? { next_action: h.next_action } : {}),
       ...(h.tags !== undefined ? { tags: h.tags } : {}),
+      ...(h.spawner_dispatch_id !== undefined
+        ? { spawner_dispatch_id: h.spawner_dispatch_id }
+        : {}),
+      ...(h.sender_agent_id !== undefined ? { sender_agent_id: h.sender_agent_id } : {}),
     };
   }
 
@@ -476,7 +494,20 @@ export class LocalStorage implements Storage {
       }
     }
 
-    // 6. Merge from_ai / from_project
+    // 6. Merge from_ai / from_project / sender metadata
+    //
+    // Sender metadata IDs survive a merge only when every source agrees on them.
+    // from_ai / from_project are human-readable labels, so joining them into
+    // "a, b" still reads correctly; spawner_dispatch_id / sender_agent_id are
+    // opaque identifiers, and a joined string is no longer resolvable by anyone.
+    // An ambiguous merge therefore drops the field instead of inventing a value.
+    const mergeSenderId = (pick: (h: Handoff) => string | undefined): string | undefined => {
+      const unique = [...new Set(sorted.map(pick))];
+      return unique.length === 1 ? unique[0] : undefined;
+    };
+    const mergedSpawnerDispatchId = mergeSenderId((h) => h.spawner_dispatch_id);
+    const mergedSenderAgentId = mergeSenderId((h) => h.sender_agent_id);
+
     const uniqueAi = [...new Set(sorted.map((h) => h.from_ai))];
     const mergedFromAi = uniqueAi.length === 1 && uniqueAi[0] ? uniqueAi[0] : uniqueAi.join(", ");
     const uniqueProject = [...new Set(sorted.map((h) => h.from_project))];
@@ -556,6 +587,10 @@ export class LocalStorage implements Storage {
       conversation_bytes: mergedConversationBytes,
       status: "active",
       ...(mergedTags !== undefined ? { tags: mergedTags } : {}),
+      ...(mergedSpawnerDispatchId !== undefined
+        ? { spawner_dispatch_id: mergedSpawnerDispatchId }
+        : {}),
+      ...(mergedSenderAgentId !== undefined ? { sender_agent_id: mergedSenderAgentId } : {}),
     };
 
     // 12. Delete sources if requested (after validation, before save to free capacity)

@@ -115,6 +115,32 @@ handoff_save(
 // → title: "MCPサーバーの設計方針を決定した" (summaryから生成)
 ```
 
+#### 送信元メタデータ (v0.14.0+)
+
+オーケストレーターが「誰がこの引き継ぎを送ったか」を記録するための、3つのオプションフィールド。受け取り側のエージェントが、オペレーターの手入力なしに送信元をたどれる。
+
+| フィールド | 意味 |
+|-----------|------|
+| `from_project` | 送信元のプロジェクト / リポジトリスコープ |
+| `spawner_dispatch_id` | 送信元オーケストレーターが Dispatch 配下で動いている場合の Dispatch ID |
+| `sender_agent_id` | 送信元オーケストレーター / エージェントの安定した識別子 |
+
+```text
+handoff_save(
+  summary: "フェーズ1完了、実装フェーズへ引き継ぎ",
+  conversation: "## User\n質問...\n\n## Assistant\n回答...",
+  from_project: "my-app",
+  spawner_dispatch_id: "dispatch-79",
+  sender_agent_id: "orchestrator-main"
+)
+```
+
+3つとも**すべてオプション**で、サーバーにとっては**不透明な値**（フォーマットの検証はしない。長さの上限のみ）。指定しないクライアントの挙動は従来とまったく同じ。`handoff_list` / `handoff_load` の両方で返され、未設定なら出力にキー自体が現れない。
+
+**オーケストレーター連携について。** これは [tmai](https://github.com/trust-delta/tmai) が save をラップして送信元コンテキストを自動補完する際のパターンだが、tmai 固有の仕組みは一切入っていない。他のオーケストレーターも同じフィールドを使えるし、「Dispatch」という概念を持たないエコシステムは単に省略すればよい。
+
+**マージ時の扱い。** `handoff_merge` は、マージ元すべてが同じ値を持つ場合に限り `spawner_dispatch_id` / `sender_agent_id` を引き継ぐ。`from_ai` / `from_project` は人間可読なラベルなので `"a, b"` と連結しても読めるが、これらは不透明な識別子であり、連結した文字列はもはや何も指さない。よって曖昧なマージではフィールドごと落とす。
+
 ### handoff_list
 
 保存済みの引き継ぎ一覧を取得（summaryのみ）。
@@ -397,6 +423,7 @@ npx conversation-handoff-mcp --serve --port 3000
 | `HANDOFF_MAX_SUMMARY_BYTES` | 10240 (10KB) | サマリーの最大サイズ |
 | `HANDOFF_MAX_TITLE_LENGTH` | 200 | タイトルの最大文字数 |
 | `HANDOFF_MAX_KEY_LENGTH` | 100 | キーの最大文字数 |
+| `HANDOFF_MAX_SENDER_METADATA_LENGTH` | 200 | `spawner_dispatch_id` / `sender_agent_id` の最大文字数 |
 
 ### 設定例（Claude Desktop）
 

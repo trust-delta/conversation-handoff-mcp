@@ -194,6 +194,33 @@ describe("RemoteStorage - advanced", () => {
       );
     });
 
+    it("should forward sender metadata verbatim in the save body", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ message: "Saved" }),
+      });
+
+      const storage = new RemoteStorage("http://localhost:1099");
+      const saveInput: SaveInput = {
+        key: "test",
+        title: "Test",
+        summary: "Summary",
+        conversation: "Conv",
+        from_ai: "claude",
+        from_project: "test",
+        spawner_dispatch_id: "dispatch-79",
+        sender_agent_id: "orchestrator-main",
+      };
+      await storage.save(saveInput);
+
+      const call = vi.mocked(globalThis.fetch).mock.calls[0];
+      expect(call).toBeDefined();
+      const init = call?.[1] as RequestInit;
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body.spawner_dispatch_id).toBe("dispatch-79");
+      expect(body.sender_agent_id).toBe("orchestrator-main");
+    });
+
     it("should send GET for list", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,

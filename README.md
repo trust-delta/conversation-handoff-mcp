@@ -115,6 +115,32 @@ handoff_save(
 // → title: "Decided on MCP server design approach" (from summary)
 ```
 
+#### Sender metadata (v0.14.0+)
+
+Three optional fields let an orchestrator record *who* sent a handoff, so the receiving agent can trace it back without the operator typing it in by hand:
+
+| Field | Meaning |
+|-------|---------|
+| `from_project` | Source project / repository scope |
+| `spawner_dispatch_id` | Dispatch ID of the sending orchestrator, when it runs under one |
+| `sender_agent_id` | Stable identifier of the sending orchestrator / agent |
+
+```text
+handoff_save(
+  summary: "Phase 1 complete, handing off to implementation",
+  conversation: "## User\nQuestion...\n\n## Assistant\nAnswer...",
+  from_project: "my-app",
+  spawner_dispatch_id: "dispatch-79",
+  sender_agent_id: "orchestrator-main"
+)
+```
+
+All of them are optional and **opaque to this server** — no format is enforced, and nothing downstream requires them. Clients that omit them behave exactly as before. They are returned by both `handoff_list` and `handoff_load`, and are left out of the output entirely when unset.
+
+**Orchestrator integration.** This is the pattern [tmai](https://github.com/trust-delta/tmai) uses to auto-populate sender context when it wraps the save path — but nothing here is tmai-specific. Any orchestrator can adopt the same fields, and an ecosystem with no "dispatch" concept can simply leave them out.
+
+**On merge.** `handoff_merge` keeps `spawner_dispatch_id` / `sender_agent_id` only when every source handoff agrees on them. Unlike `from_ai` / `from_project`, which merge into a readable `"a, b"` list, these are opaque identifiers — a joined string would no longer resolve to anything, so an ambiguous merge drops the field instead.
+
 ### handoff_list
 
 Get list of saved handoffs (summaries only).
@@ -396,6 +422,7 @@ Customize behavior via environment variables.
 | `HANDOFF_MAX_SUMMARY_BYTES` | 10240 (10KB) | Maximum summary size |
 | `HANDOFF_MAX_TITLE_LENGTH` | 200 | Maximum title length |
 | `HANDOFF_MAX_KEY_LENGTH` | 100 | Maximum key length |
+| `HANDOFF_MAX_SENDER_METADATA_LENGTH` | 200 | Maximum length of `spawner_dispatch_id` / `sender_agent_id` |
 
 ### Configuration Example (Claude Desktop)
 

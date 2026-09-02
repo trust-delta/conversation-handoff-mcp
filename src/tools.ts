@@ -152,6 +152,18 @@ Omit sections that don't apply. Add custom sections if needed.`,
         .describe(
           "Tags for categorizing this handoff (e.g., ['project:foo', 'issue:176', 'auth']). Lowercase alphanumeric, hyphens, underscores, colons."
         ),
+      spawner_dispatch_id: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: dispatch ID of the sending orchestrator, when it runs under one (e.g. a tmai Dispatch). Opaque identifier — omit if not applicable."
+        ),
+      sender_agent_id: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: stable identifier of the sending orchestrator/agent. Opaque identifier — omit if not applicable."
+        ),
     },
     async (
       {
@@ -167,6 +179,8 @@ Omit sections that don't apply. Add custom sections if needed.`,
         status,
         next_action,
         tags,
+        spawner_dispatch_id,
+        sender_agent_id,
       },
       extra
     ) => {
@@ -196,6 +210,8 @@ Omit sections that don't apply. Add custom sections if needed.`,
         status,
         next_action,
         tags,
+        spawner_dispatch_id,
+        sender_agent_id,
       });
 
       if (result.success) {
@@ -281,6 +297,8 @@ Omit sections that don't apply. Add custom sections if needed.`,
               status: z.enum(["active", "completed", "pending"]).optional(),
               next_action: z.string().optional(),
               tags: z.array(z.string()).optional(),
+              spawner_dispatch_id: z.string().optional(),
+              sender_agent_id: z.string().optional(),
             })
           )
           .describe("List of handoffs"),
@@ -361,6 +379,18 @@ Omit sections that don't apply. Add custom sections if needed.`,
       const handoff = result.data;
       const comments = handoff.comments ?? [];
 
+      // Sender metadata is rendered only when present, so the common case
+      // (handoffs saved without it) keeps the original compact header.
+      const senderMetaParts: string[] = [];
+      if (handoff.spawner_dispatch_id) {
+        senderMetaParts.push(`dispatch: ${handoff.spawner_dispatch_id}`);
+      }
+      if (handoff.sender_agent_id) {
+        senderMetaParts.push(`agent: ${handoff.sender_agent_id}`);
+      }
+      const senderMetaText =
+        senderMetaParts.length > 0 ? `\n**Sender:** ${senderMetaParts.join(", ")}` : "";
+
       let commentsText = "";
       if (comments.length > 0) {
         const commentLines = comments.map(
@@ -376,7 +406,7 @@ Omit sections that don't apply. Add custom sections if needed.`,
             text: `# Handoff: ${handoff.title}
 
 **From:** ${handoff.from_ai}${handoff.from_project ? ` (${handoff.from_project})` : ""}
-**Created:** ${handoff.created_at}
+**Created:** ${handoff.created_at}${senderMetaText}
 
 ## Summary
 ${handoff.summary}
@@ -393,6 +423,12 @@ ${handoff.conversation}${commentsText}`,
           from_ai: handoff.from_ai,
           from_project: handoff.from_project,
           created_at: handoff.created_at,
+          ...(handoff.spawner_dispatch_id !== undefined
+            ? { spawner_dispatch_id: handoff.spawner_dispatch_id }
+            : {}),
+          ...(handoff.sender_agent_id !== undefined
+            ? { sender_agent_id: handoff.sender_agent_id }
+            : {}),
           comments,
         },
       };

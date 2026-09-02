@@ -109,6 +109,83 @@ describe("HttpServer", () => {
     });
   });
 
+  describe("Sender metadata (issue #25)", () => {
+    const post = (body: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${testPort}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    const base = {
+      title: "Sender Metadata",
+      summary: "Summary",
+      conversation: "## User\nQ\n\n## Assistant\nA",
+      from_ai: "claude",
+      from_project: "test",
+    };
+
+    it("should round-trip sender metadata through save and load", async () => {
+      const saveResponse = await post({
+        ...base,
+        key: "sender-meta-full",
+        spawner_dispatch_id: "dispatch-79",
+        sender_agent_id: "orchestrator-main",
+      });
+      expect(saveResponse.status).toBe(200);
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/sender-meta-full`);
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as {
+        spawner_dispatch_id?: string;
+        sender_agent_id?: string;
+      };
+      expect(data.spawner_dispatch_id).toBe("dispatch-79");
+      expect(data.sender_agent_id).toBe("orchestrator-main");
+    });
+
+    it("should accept a save that omits sender metadata", async () => {
+      const saveResponse = await post({ ...base, key: "sender-meta-absent" });
+      expect(saveResponse.status).toBe(200);
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff/sender-meta-absent`);
+      const data = (await response.json()) as Record<string, unknown>;
+      expect("spawner_dispatch_id" in data).toBe(false);
+      expect("sender_agent_id" in data).toBe(false);
+    });
+
+    it("should expose sender metadata in the list response", async () => {
+      await post({
+        ...base,
+        key: "sender-meta-listed",
+        sender_agent_id: "orchestrator-listed",
+      });
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/handoff`);
+      const data = (await response.json()) as Array<{ key: string; sender_agent_id?: string }>;
+      const entry = data.find((h) => h.key === "sender-meta-listed");
+      expect(entry?.sender_agent_id).toBe("orchestrator-listed");
+    });
+
+    it("should reject non-string sender metadata", async () => {
+      const response = await post({ ...base, key: "sender-meta-bad", sender_agent_id: 123 });
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error: string };
+      expect(data.error).toBe("Field 'sender_agent_id' must be a string");
+    });
+
+    it("should reject oversized sender metadata", async () => {
+      const response = await post({
+        ...base,
+        key: "sender-meta-long",
+        spawner_dispatch_id: "x".repeat(201),
+      });
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error: string };
+      expect(data.error).toContain("exceeds maximum length");
+    });
+  });
+
   describe("Merge endpoint", () => {
     // Setup: save two handoffs for merge tests
     beforeAll(async () => {
