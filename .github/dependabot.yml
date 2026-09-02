@@ -9,6 +9,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # @types/node は engines の床 (node >=20) に合わせて 20 系へ意図的に据え置く。
+    # major へ追従すると Node 20 では存在しない API の型が通ってしまうため無視する。
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         update-types:
