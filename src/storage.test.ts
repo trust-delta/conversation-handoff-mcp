@@ -22,6 +22,7 @@ const testConfig: Config = {
   maxNextActionBytes: 2048,
   maxTagsPerHandoff: 20,
   maxTagLength: 50,
+  maxSenderMetadataLength: 200,
 };
 
 describe("LocalStorage", () => {
@@ -177,6 +178,39 @@ describe("LocalStorage", () => {
       expect(loaded.data?.next_action).toBe("Run tests");
     });
 
+    it("should omit sender metadata when not provided", async () => {
+      await storage.save(validInput);
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data && "spawner_dispatch_id" in loaded.data).toBe(false);
+      expect(loaded.data && "sender_agent_id" in loaded.data).toBe(false);
+    });
+
+    it("should persist sender metadata when provided", async () => {
+      await storage.save({
+        ...validInput,
+        spawner_dispatch_id: "dispatch-79",
+        sender_agent_id: "orchestrator-main",
+      });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.spawner_dispatch_id).toBe("dispatch-79");
+      expect(loaded.data?.sender_agent_id).toBe("orchestrator-main");
+    });
+
+    it("should persist sender metadata fields independently", async () => {
+      await storage.save({ ...validInput, sender_agent_id: "orchestrator-main" });
+      const loaded = await storage.load(validInput.key);
+      expect(loaded.data?.sender_agent_id).toBe("orchestrator-main");
+      expect(loaded.data && "spawner_dispatch_id" in loaded.data).toBe(false);
+    });
+
+    it("should reject oversized sender metadata", async () => {
+      for (const field of ["spawner_dispatch_id", "sender_agent_id"] as const) {
+        const result = await storage.save({ ...validInput, [field]: "x".repeat(201) });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("exceeds maximum length");
+      }
+    });
+
     it("should reject invalid status", async () => {
       const result = await storage.save({
         ...validInput,
@@ -319,6 +353,28 @@ describe("LocalStorage", () => {
       expect(summary?.conversation_bytes).toBe(Buffer.byteLength(validInput.conversation, "utf8"));
       expect(summary?.status).toBe("completed");
       expect(summary?.next_action).toBe("Deploy");
+    });
+
+    it("should include sender metadata in summaries", async () => {
+      await storage.save({
+        ...validInput,
+        spawner_dispatch_id: "dispatch-79",
+        sender_agent_id: "orchestrator-main",
+      });
+
+      const result = await storage.list();
+      const summary = result.data?.[0];
+      expect(summary?.spawner_dispatch_id).toBe("dispatch-79");
+      expect(summary?.sender_agent_id).toBe("orchestrator-main");
+    });
+
+    it("should omit sender metadata from summaries when unset", async () => {
+      await storage.save(validInput);
+
+      const result = await storage.list();
+      const summary = result.data?.[0];
+      expect(summary && "spawner_dispatch_id" in summary).toBe(false);
+      expect(summary && "sender_agent_id" in summary).toBe(false);
     });
 
     it("should include comment_count in summaries", async () => {
@@ -485,6 +541,59 @@ describe("LocalStorage", () => {
       expect(loaded.data?.conversation).toContain("<!-- Source: h1 -->");
       expect(loaded.data?.conversation).toContain("<!-- Source: h2 -->");
       expect(loaded.data?.conversation).toContain("---");
+    });
+
+    it("should keep sender metadata when every source agrees", async () => {
+      const meta = { spawner_dispatch_id: "dispatch-79", sender_agent_id: "orchestrator-main" };
+      await storage.save(createHandoff("h1", meta));
+      await storage.save(createHandoff("h2", meta));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(result.data?.merged_key ?? "");
+      expect(loaded.data?.spawner_dispatch_id).toBe("dispatch-79");
+      expect(loaded.data?.sender_agent_id).toBe("orchestrator-main");
+    });
+
+    it("should drop sender metadata when sources disagree", async () => {
+      await storage.save(
+        createHandoff("h1", { spawner_dispatch_id: "dispatch-79", sender_agent_id: "agent-a" })
+      );
+      await storage.save(
+        createHandoff("h2", { spawner_dispatch_id: "dispatch-80", sender_agent_id: "agent-b" })
+      );
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(result.data?.merged_key ?? "");
+      // Opaque IDs are never joined into "a, b" — an ambiguous merge omits them
+      expect(loaded.data && "spawner_dispatch_id" in loaded.data).toBe(false);
+      expect(loaded.data && "sender_agent_id" in loaded.data).toBe(false);
+    });
+
+    it("should drop sender metadata when only some sources carry it", async () => {
+      await storage.save(createHandoff("h1", { sender_agent_id: "agent-a" }));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(result.data?.merged_key ?? "");
+      expect(loaded.data && "sender_agent_id" in loaded.data).toBe(false);
+    });
+
+    it("should omit sender metadata when no source carries it", async () => {
+      await storage.save(createHandoff("h1"));
+      await storage.save(createHandoff("h2"));
+
+      const result = await storage.merge(baseMergeInput);
+      expect(result.success).toBe(true);
+
+      const loaded = await storage.load(result.data?.merged_key ?? "");
+      expect(loaded.data && "spawner_dispatch_id" in loaded.data).toBe(false);
+      expect(loaded.data && "sender_agent_id" in loaded.data).toBe(false);
     });
 
     it("should merge two handoffs with sequential strategy", async () => {

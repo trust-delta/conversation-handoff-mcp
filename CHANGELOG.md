@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Maintenance only — no functional or API changes to the published package.
+### Added
+
+- **Sender metadata fields** (issue #25): `handoff_save` now accepts two optional identifiers alongside the existing `from_project` — `spawner_dispatch_id` (dispatch ID of the sending orchestrator, when it runs under one) and `sender_agent_id` (stable orchestrator/agent identifier). Both are persisted and returned by `handoff_list` and `handoff_load`, and are omitted from output entirely when unset
+  - Purely additive: clients that don't send them behave exactly as before
+  - Deliberately **opaque** — only a length bound is enforced (`HANDOFF_MAX_SENDER_METADATA_LENGTH`, default 200), no format constraint, so the server stays provider-neutral. This is the pattern [tmai](https://github.com/trust-delta/tmai) uses to auto-populate sender context, but nothing in the implementation is tmai-specific
+  - `handoff_merge` keeps them only when every source handoff agrees. Unlike `from_ai` / `from_project`, which merge into a readable `"a, b"` list, a joined opaque ID would no longer resolve to anything, so an ambiguous merge drops the field
+  - `HANDOFF_MAX_SENDER_METADATA_LENGTH` env var for the length bound
+  - 26 new tests (total: 386)
 
 ### Changed
 

@@ -35,6 +35,13 @@ export interface Handoff {
   next_action?: string;
   /** Tags for categorizing and searching handoffs */
   tags?: string[];
+  /**
+   * Dispatch ID of the sender orchestrator, when it runs under one
+   * (e.g. a tmai Dispatch). Opaque to this server.
+   */
+  spawner_dispatch_id?: string;
+  /** Stable identifier of the sender orchestrator/agent. Opaque to this server. */
+  sender_agent_id?: string;
 }
 
 export interface HandoffSummary {
@@ -55,6 +62,13 @@ export interface HandoffSummary {
   next_action?: string;
   /** Tags for categorizing and searching handoffs */
   tags?: string[];
+  /**
+   * Dispatch ID of the sender orchestrator, when it runs under one
+   * (e.g. a tmai Dispatch). Opaque to this server.
+   */
+  spawner_dispatch_id?: string;
+  /** Stable identifier of the sender orchestrator/agent. Opaque to this server. */
+  sender_agent_id?: string;
 }
 
 export interface SaveInput {
@@ -74,6 +88,13 @@ export interface SaveInput {
   next_action?: string;
   /** Tags for categorizing and searching handoffs */
   tags?: string[];
+  /**
+   * Dispatch ID of the sender orchestrator, when it runs under one
+   * (e.g. a tmai Dispatch). Opaque to this server.
+   */
+  spawner_dispatch_id?: string;
+  /** Stable identifier of the sender orchestrator/agent. Opaque to this server. */
+  sender_agent_id?: string;
 }
 
 /** Search criteria for finding handoffs */

@@ -15,6 +15,8 @@ export interface Config {
   maxNextActionBytes: number;
   maxTagsPerHandoff: number;
   maxTagLength: number;
+  /** Max length of sender metadata identifiers (spawner_dispatch_id / sender_agent_id) */
+  maxSenderMetadataLength: number;
 }
 
 export interface PortRange {
@@ -93,6 +95,7 @@ export const defaultConfig: Config = {
   maxNextActionBytes: parseEnvInt(process.env.HANDOFF_MAX_NEXT_ACTION_BYTES, 2048),
   maxTagsPerHandoff: parseEnvInt(process.env.HANDOFF_MAX_TAGS, 20),
   maxTagLength: parseEnvInt(process.env.HANDOFF_MAX_TAG_LENGTH, 50),
+  maxSenderMetadataLength: parseEnvInt(process.env.HANDOFF_MAX_SENDER_METADATA_LENGTH, 200),
 };
 
 export const connectionConfig: ConnectionConfig = {

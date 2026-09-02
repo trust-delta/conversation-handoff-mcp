@@ -14,6 +14,7 @@ import {
   validateNextAction,
   validateSaveInput,
   validateSearchInput,
+  validateSenderMetadata,
   validateStatus,
   validateSummary,
   validateTags,
@@ -33,6 +34,7 @@ const testConfig: Config = {
   maxNextActionBytes: 2048,
   maxTagsPerHandoff: 20,
   maxTagLength: 50,
+  maxSenderMetadataLength: 200,
 };
 
 describe("validateKey", () => {
@@ -311,6 +313,41 @@ describe("validateNextAction", () => {
   });
 });
 
+describe("validateSenderMetadata", () => {
+  it("should accept an empty identifier", () => {
+    expect(validateSenderMetadata("", "sender_agent_id", testConfig).valid).toBe(true);
+  });
+
+  it("should accept a normal identifier", () => {
+    expect(validateSenderMetadata("dispatch-79", "spawner_dispatch_id", testConfig).valid).toBe(
+      true
+    );
+  });
+
+  it("should accept arbitrary formats (provider-neutral: no shape constraint)", () => {
+    const values = [
+      "urn:tmai:dispatch:79",
+      "9f2c1e40-5b7a-4c1d-9f3e-2b8a7c6d5e4f",
+      "agent/main#3",
+      "エージェント-1",
+    ];
+    for (const value of values) {
+      expect(validateSenderMetadata(value, "sender_agent_id", testConfig).valid).toBe(true);
+    }
+  });
+
+  it("should accept an identifier at the exact limit", () => {
+    expect(validateSenderMetadata("x".repeat(200), "sender_agent_id", testConfig).valid).toBe(true);
+  });
+
+  it("should reject an oversized identifier", () => {
+    const result = validateSenderMetadata("x".repeat(201), "sender_agent_id", testConfig);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("sender_agent_id");
+    expect(result.error).toContain("exceeds maximum length");
+  });
+});
+
 describe("validateSaveInput", () => {
   const validInput = {
     key: "test-key",
@@ -382,6 +419,54 @@ describe("validateSaveInput", () => {
     };
     const result = validateSaveInput(input);
     expect(result.valid).toBe(true);
+  });
+
+  it("should accept optional sender metadata fields", () => {
+    const input = {
+      ...validInput,
+      spawner_dispatch_id: "dispatch-79",
+      sender_agent_id: "orchestrator-main",
+    };
+    const result = validateSaveInput(input);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.spawner_dispatch_id).toBe("dispatch-79");
+      expect(result.data.sender_agent_id).toBe("orchestrator-main");
+    }
+  });
+
+  it("should accept input without sender metadata fields (they stay optional)", () => {
+    const result = validateSaveInput(validInput);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.spawner_dispatch_id).toBeUndefined();
+      expect(result.data.sender_agent_id).toBeUndefined();
+    }
+  });
+
+  it("should allow empty strings for sender metadata fields", () => {
+    const result = validateSaveInput({
+      ...validInput,
+      spawner_dispatch_id: "",
+      sender_agent_id: "",
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("should reject non-string sender metadata fields", () => {
+    for (const field of ["spawner_dispatch_id", "sender_agent_id"]) {
+      const result = validateSaveInput({ ...validInput, [field]: 123 });
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(`Field '${field}' must be a string`);
+    }
+  });
+
+  it("should reject oversized sender metadata fields", () => {
+    for (const field of ["spawner_dispatch_id", "sender_agent_id"]) {
+      const result = validateSaveInput({ ...validInput, [field]: "x".repeat(201) });
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain("exceeds maximum length");
+    }
   });
 
   it("should reject non-integer message_count", () => {

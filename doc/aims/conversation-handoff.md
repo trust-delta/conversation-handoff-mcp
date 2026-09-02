@@ -27,4 +27,4 @@ state: open
 - [done] dependabot PR のレビュー / マージ運用（継続的な保守 posture）: @types/node の据え置き判断を dependabot.yml の ignore（major のみ除外）として config 化し、毎週の再提案を止めた
 - [done] 2026-09 保守一巡: minor/patch currency（sdk 1.30 / zod 4.5 / biome 2.5.11 / vite 8.2 / vitest 4.1.11 等）+ 推移依存の脆弱性 7→0（本番側 fast-uri / hono / ip-address は MCP SDK 経由）、actions/setup-node 7 追従
 - [done] typescript 7（ネイティブ移植コンパイラ）へ追従: 設定変更ゼロで移行完了。emit は TS6 とバイト一致（24ファイル）、型チェックは約4倍高速、engines は node>=16.20 で床 20 と両立。`types:["node"]` は TS7 でも依然必要
-- [todo] tmai 連携メタデータの残り（spawner_dispatch_id / sender_agent_id, issue #25）— from_project は実装済み
+- [done] 送信元メタデータ（issue #25）: from_project に加え spawner_dispatch_id / sender_agent_id を追加。全てオプションかつ不透明（長さ上限のみ・形式検証なし）で provider-neutral を維持。merge は全ソース一致時のみ引き継ぎ（不透明IDの連結は無意味なため）
