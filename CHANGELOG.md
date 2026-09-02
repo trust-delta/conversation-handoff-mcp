@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Maintenance only — no functional or API changes to the published package.
+
+### Changed
+
+- **Dependency currency**: `@modelcontextprotocol/sdk` 1.29 → 1.30, `@modelcontextprotocol/ext-apps` → 1.7.5, `zod` → 4.5.4, `@biomejs/biome` → 2.5.11, `vite` → 8.2.2, `vitest` / `@vitest/coverage-v8` → 4.1.11, `lint-staged` → 17.4.1
+- **Security**: resolved all 7 `npm audit` advisories (2 moderate / 5 high) → **0 vulnerabilities**. Three sat in the runtime dependency graph — `fast-uri`, `hono`, `ip-address`, all reached through `@modelcontextprotocol/sdk` — and were failing the CI `npm audit --omit=dev` gate. All were fixed inside the existing semver ranges, so consumers pick them up on install without a republish
+- **`typescript` 6.0 → 7.0** (native compiler). The emitted `dist/` output is byte-identical to the TS 6 build across all 24 files; type checking runs roughly 4x faster. `"types": ["node"]` is still required for `@types/node` 20
+- **CI actions**: `actions/setup-node` v6 → v7
+- Dependabot now ignores `@types/node` major updates — the package is deliberately held at 20.x to match `engines.node >=20`
+
 ## [0.13.1] - 2026-06-24
 
 Maintenance release — no functional or API changes to the published package.
