@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI actions**: `actions/setup-node` v6 → v7
 - Dependabot now ignores `@types/node` major updates — the package is deliberately held at 20.x to match `engines.node >=20`
 
+### Security
+
+- **Prompt injection protection is now actually implemented** in `handoff_load`. The README has documented this control since v0.5.0, but no corresponding code was ever written — the tool returned stored content as plain Markdown with no banner, no wrapping, and no boundary. The output now carries:
+  - a warning banner stating the block is data, not instructions
+  - BEGIN/END markers carrying a **one-time random token** minted per response, so stored content cannot forge the end of the block (it was written before the token existed)
+  - code fences around every free-text field, widened past the longest backtick run in the content so a handoff containing a code block cannot close the fence early
+  - the title, `from_ai` and remaining metadata inside the block too — they are sender-written just like the body
+  - `structuredContent` is unchanged and still raw, for programmatic consumers
+  - New `src/security.ts` module with 23 tests, including breakout and forged-marker cases
+  - This is a mitigation, not a guarantee; the README says so explicitly
+
 ## [0.13.1] - 2026-06-24
 
 Maintenance release — no functional or API changes to the published package.

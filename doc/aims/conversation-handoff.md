@@ -18,7 +18,7 @@ state: open
 - [done] 起動モード分岐（index.ts）: MCP（stdio, デフォルト） / HTTP（--serve）の二モード
 - [done] Storage インターフェース: Local in-memory（Map・FIFO・シングルトン） / Remote HTTP client（再接続DI）、全操作 StorageResult を返す
 - [done] コア操作: save / list / load / clear / stats / merge、verbatim 保存、key/title 自動生成
-- [done] 安全: handoff_load セキュリティマーカー、監査ログ（JSONL, --audit / HANDOFF_AUDIT）
+- [done] 安全: 監査ログ（JSONL, --audit / HANDOFF_AUDIT）。handoff_load のプロンプトインジェクション・マーカーは README に v0.5.0 から記載がありながら未実装だったため v0.14.0 で実装（警告バナー / ワンタイム境界トークン / 動的長コードフェンス、src/security.ts）
 - [done] 発見性: tags メタデータ + handoff_search、list メタデータ（件数 / サイズ / status / next action）
 - [done] 注釈: comments/annotations（handoff_add_comment 等）、サーバー再起動（handoff_restart）
 - [done] 大規模会話の分割: handoff_append（v0.13.0）
