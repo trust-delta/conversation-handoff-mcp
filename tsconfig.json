@@ -15,8 +15,9 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    // TS 6.0 no longer auto-includes @types/node globals (process/Buffer/NodeJS)
+    // TS 6+ no longer auto-includes @types/node globals (process/Buffer/NodeJS)
     // with @types/node 20 (its typesVersions only maps <=5.6); list it explicitly.
+    // 依然として TS 7 でも必要（外すと node: 系 import が TS2591 で落ちる）。
     "types": ["node"]
   },
   "include": ["src/**/*"],
