@@ -15,6 +15,8 @@ MCP server for transferring conversation context between AI chats or different p
 
 ## Features
 
+- **Prompt Injection Protection (v0.14.0+)**: `handoff_load` returns stored content inside untrusted-content markers — a warning banner, a one-time boundary token that content cannot forge, and code fences widened past any backtick run in the body
+- **Sender Metadata (v0.14.0+)**: Optional `from_project` / `spawner_dispatch_id` / `sender_agent_id` let an orchestrator record who sent a handoff, without tying the server to any one ecosystem
 - **Tags & Search (v0.12.0+)**: Tag handoffs with structured labels (`project:foo`, `issue:176`) and discover them with `handoff_search` — multi-criteria filtering by tags, text, project, AI, status, and date range
 - **Handoff Metadata (v0.11.0+)**: Enrich `handoff_list` with message count, size, status, and next action — decide on work resumption without loading full conversations
 - **Comments/Annotations (v0.10.0+)**: Add notes and annotations to handoffs for cross-session context
