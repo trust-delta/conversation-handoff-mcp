@@ -24,4 +24,7 @@ state: open
 - [done] 大規模会話の分割: handoff_append（v0.13.0）
 - [done] 出荷後の currency 自動化: dependabot（npm + github-actions・週次・minor/patch グループ化）導入。非破壊 currency 一巡で脆弱性 11→0（PR #26）
 - [done] major 追従: lint-staged 17 (#33) / biome 2 (#35, config v2 移行) / typescript 6 (#36, `types:["node"]`) / vite 8 (#37) を個別 PR で完了。@types/node は engines 床(>=20)に合わせ 20 据え置き
-- [todo] dependabot PR のレビュー / マージ運用（継続的な保守 posture）— @types/node 26 提案は据え置き判断
+- [done] dependabot PR のレビュー / マージ運用（継続的な保守 posture）: @types/node の据え置き判断を dependabot.yml の ignore（major のみ除外）として config 化し、毎週の再提案を止めた
+- [done] 2026-09 保守一巡: minor/patch currency（sdk 1.30 / zod 4.5 / biome 2.5.11 / vite 8.2 / vitest 4.1.11 等）+ 推移依存の脆弱性 7→0（本番側 fast-uri / hono / ip-address は MCP SDK 経由）、actions/setup-node 7 追従
+- [todo] typescript 7（ネイティブ移植コンパイラ）への major 追従を評価
+- [todo] tmai 連携メタデータの残り（spawner_dispatch_id / sender_agent_id, issue #25）— from_project は実装済み
